@@ -39,6 +39,8 @@
 #define MAX30102_BUFFER_SIZE     500
 #define MAX30102_MA4_SIZE        4
 #define MAX30102_HAMMING_SIZE    5
+#define IR_BUF_LEN               500
+#define RED_BUF_LEN              500
 
 // --- API声明 ---
 void max30102_init(void);
@@ -52,5 +54,8 @@ static inline void max30102_clear_flag(void);
 void max30102_algorithm_calculate(uint32_t *ir_buffer, int32_t buffer_len, uint32_t *red_buffer,
                                   int32_t *spo2, int8_t *spo2_valid,
                                   int32_t *heart_rate, int8_t *hr_valid);
+
+// --- 监测任务 ---
+void max30102_monitor_task(void *pvParameters);
 
 #endif // MAX30102_H
