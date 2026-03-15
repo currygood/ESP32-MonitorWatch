@@ -1,0 +1,7 @@
+{
+	"idf.flashType": "JTAG",
+	"idf.portWin": "COM13",
+	"idf.openOcdConfigs": [
+		"board/esp32s3-builtin.cfg"
+	]
+}
