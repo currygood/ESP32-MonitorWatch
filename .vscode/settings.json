@@ -1,7 +1,16 @@
 {
-	"idf.flashType": "JTAG",
-	"idf.portWin": "COM13",
-	"idf.openOcdConfigs": [
-		"board/esp32s3-builtin.cfg"
-	]
+  "idf.flashType": "UART",
+  "idf.portWin": "COM8",
+  "idf.openOcdConfigs": [
+	"board/esp32s3-builtin.cfg"
+],
+  "idf.customExtraVars": {
+	"IDF_TARGET": "esp32s3"
+},
+  "clangd.path": "f:\\esp_tool\\tools\\esp-clang\\16.0.1-fe4f10a809\\esp-clang\\bin\\clangd.exe",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=f:\\Esp32\\Code\\Watch\\ESP32-MonitorWatch\\build"
+  ]
 }

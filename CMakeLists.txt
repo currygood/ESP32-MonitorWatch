@@ -9,4 +9,4 @@ add_compile_options(-fdiagnostics-color=always)
 
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-project(00test)
+project(ESP32-MonitorWatch)

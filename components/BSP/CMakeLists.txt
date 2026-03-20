@@ -1,9 +1,7 @@
 set(src_dirs
-    LED/LED.c
 	I2C/i2c_driver.c)
 
 set(include_dirs
-    LED
 	I2C)
 
 set(requires

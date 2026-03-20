@@ -2,9 +2,12 @@
 #include "i2c_driver.h"
 #include <stdlib.h>
 #include <math.h>
+#include <stdio.h>
+#include <string.h>
+#include "esp_task_wdt.h"
+#include "esp_timer.h"
 
 static const char *TAG = "MAX30102";
-static i2c_master_bus_handle_t i2c_bus = NULL;
 static i2c_master_dev_handle_t max30102_dev = NULL;
 static volatile bool max30102_int_flag = false;
 static TaskHandle_t notify_task = NULL;
@@ -17,47 +20,191 @@ static int8_t ch_spo2_valid;
 static int32_t n_heart_rate;
 static int8_t ch_hr_valid;
 
+// --- 心率预警相关变量 ---
+static uint32_t Heart_Rate_Baseline = 70;                    // 基准心率（默认70bpm）
+static uint32_t Heart_Rate_Warning_Threshold = 90;           // 预警阈值（默认比基准高20）
+static uint32_t Heart_Rate_Baseline_History[HEART_RATE_BASELINE_SAMPLES]; // 历史心率记录
+static uint8_t Heart_Rate_Baseline_Index = 0;               // 历史记录索引
+static uint8_t Heart_Rate_Stable_Count = 0;                 // 心率稳定计数器
+static bool Heart_Rate_Warning_Active = false;              // 预警状态标志
+static bool Heart_Rate_Baseline_Initialized = false;        // 基准心率是否已初始化
+
 // --- I2C初始化 ---
-void max30102_init(void) {
-    ESP_ERROR_CHECK(i2c_init_bus(MAX30102_I2C_PORT, MAX30102_I2C_SDA_GPIO, MAX30102_I2C_SCL_GPIO, MAX30102_I2C_FREQ, &i2c_bus));
-    ESP_ERROR_CHECK(i2c_add_device(i2c_bus, MAX30102_ADDR, MAX30102_I2C_FREQ, &max30102_dev));
-
-    // 传感器初始化流程（参考原始代码）
+void Max30102_Init(i2c_master_bus_handle_t bus_handle) {
+    ESP_ERROR_CHECK(I2c_Add_Device(bus_handle, MAX30102_ADDR, I2C_FREQ, &max30102_dev));
+    
     vTaskDelay(pdMS_TO_TICKS(100));
-    max30102_write_reg(REG_MODE_CONFIG, 0x40); // 软件复位
+    Max30102_Write_Reg(REG_MODE_CONFIG, 0x40); // 软件复位
     vTaskDelay(pdMS_TO_TICKS(10));
-    max30102_write_reg(REG_INTR_ENABLE_1, 0xC0);
-    max30102_write_reg(REG_INTR_ENABLE_2, 0x00);
-    max30102_write_reg(REG_FIFO_WR_PTR, 0x00);
-    max30102_write_reg(REG_OVF_COUNTER, 0x00);
-    max30102_write_reg(REG_FIFO_RD_PTR, 0x00);
-    max30102_write_reg(REG_FIFO_CONFIG, 0x0F);
-    max30102_write_reg(REG_MODE_CONFIG, 0x03);
-    max30102_write_reg(REG_SPO2_CONFIG, 0x27);
-    max30102_write_reg(REG_LED1_PA, 0x24);
-    max30102_write_reg(REG_LED2_PA, 0x24);
-    max30102_write_reg(REG_PILOT_PA, 0x7f);
+    Max30102_Write_Reg(REG_INTR_ENABLE_1, 0xC0);
+    Max30102_Write_Reg(REG_INTR_ENABLE_2, 0x00);
+    Max30102_Write_Reg(REG_FIFO_WR_PTR, 0x00);
+    Max30102_Write_Reg(REG_OVF_COUNTER, 0x00);
+    Max30102_Write_Reg(REG_FIFO_RD_PTR, 0x00);
+    Max30102_Write_Reg(REG_FIFO_CONFIG, 0x0F);
+    Max30102_Write_Reg(REG_MODE_CONFIG, 0x03);
+    Max30102_Write_Reg(REG_SPO2_CONFIG, 0x27);
+    Max30102_Write_Reg(REG_LED1_PA, 0x24);
+    Max30102_Write_Reg(REG_LED2_PA, 0x24);
+    Max30102_Write_Reg(REG_PILOT_PA, 0x7f);
 }
 
-// --- I2C读写 ---
-esp_err_t max30102_write_reg(uint8_t reg, uint8_t data) {
-    return i2c_write_reg(max30102_dev, reg, data);
+// --- MAX30102的I2C读写 ---
+esp_err_t Max30102_Write_Reg(uint8_t reg, uint8_t data) {
+    return I2c_Write_Reg(max30102_dev, reg, data);
 }
 
-esp_err_t max30102_read_reg(uint8_t reg, uint8_t *data) {
-    return i2c_read_reg(max30102_dev, reg, data);
+esp_err_t Max30102_Read_Reg(uint8_t reg, uint8_t *data) {
+    return I2c_Read_Reg(max30102_dev, reg, data);
 }
 
-esp_err_t max30102_read_fifo(uint8_t *buffer, uint8_t count) {
-    return i2c_read_bytes(max30102_dev, REG_FIFO_DATA, buffer, count);
+// --- 心率预警功能实现 ---
+
+// 初始化心率预警系统
+void Max30102_Heart_Rate_Warning_Init(void)
+{
+    // 初始化历史记录数组
+    for (int i = 0; i < HEART_RATE_BASELINE_SAMPLES; i++) {
+        Heart_Rate_Baseline_History[i] = Heart_Rate_Baseline;
+    }
+    Heart_Rate_Baseline_Index = 0;
+    Heart_Rate_Stable_Count = 0;
+    Heart_Rate_Warning_Active = false;
+    Heart_Rate_Baseline_Initialized = false;
+    
+    ESP_LOGI(TAG, "心率预警系统初始化完成");
 }
 
-uint8_t max30102_can_read(void) {
+// 更新基准心率
+void Max30102_Update_Heart_Rate_Baseline(uint32_t current_hr)
+{
+    // 检查心率是否在有效范围内
+    if (current_hr < HEART_RATE_MIN_VALID || current_hr > HEART_RATE_MAX_VALID) {
+        return;
+    }
+    
+    // 记录当前心率到历史数组
+    Heart_Rate_Baseline_History[Heart_Rate_Baseline_Index] = current_hr;
+    Heart_Rate_Baseline_Index = (Heart_Rate_Baseline_Index + 1) % HEART_RATE_BASELINE_SAMPLES;
+    
+    // 计算平均心率作为基准
+    uint32_t sum = 0;
+    uint8_t valid_count = 0;
+    
+    for (int i = 0; i < HEART_RATE_BASELINE_SAMPLES; i++) {
+        if (Heart_Rate_Baseline_History[i] >= HEART_RATE_MIN_VALID && 
+            Heart_Rate_Baseline_History[i] <= HEART_RATE_MAX_VALID) {
+            sum += Heart_Rate_Baseline_History[i];
+            valid_count++;
+        }
+    }
+    
+    if (valid_count > 0) {
+        uint32_t new_baseline = sum / valid_count;
+        
+        // 检查心率是否稳定（变化在±5bpm内）
+        if (abs((int32_t)new_baseline - (int32_t)Heart_Rate_Baseline) <= 5) {
+            Heart_Rate_Stable_Count++;
+        } else {
+            Heart_Rate_Stable_Count = 0;
+        }
+        
+        // 只有当心率稳定一定次数后才更新基准
+        if (Heart_Rate_Stable_Count >= HEART_RATE_STABLE_COUNT) {
+            Heart_Rate_Baseline = new_baseline;
+            Heart_Rate_Warning_Threshold = Heart_Rate_Baseline + HEART_RATE_WARNING_THRESHOLD_LOW;
+            Heart_Rate_Baseline_Initialized = true;
+            
+            ESP_LOGI(TAG, "基准心率已更新: %lu bpm, 预警阈值: %lu bpm", 
+                     Heart_Rate_Baseline, Heart_Rate_Warning_Threshold);
+        }
+    }
+}
+
+// 检查心率是否过快
+bool Max30102_Check_Heart_Rate_Warning(uint32_t current_hr)
+{
+    // 检查心率是否在有效范围内
+    if (current_hr < HEART_RATE_MIN_VALID || current_hr > HEART_RATE_MAX_VALID) {
+        Heart_Rate_Warning_Active = false;
+        return false;
+    }
+    
+    // 如果基准心率尚未初始化，使用默认阈值
+    uint32_t warning_threshold = Heart_Rate_Baseline_Initialized ? 
+                                Heart_Rate_Warning_Threshold : 
+                                (Heart_Rate_Baseline + HEART_RATE_WARNING_THRESHOLD_LOW);
+    
+    // 检查是否超过预警阈值
+    if (current_hr >= warning_threshold) {
+        if (!Heart_Rate_Warning_Active) {
+            Heart_Rate_Warning_Active = true;
+            ESP_LOGW(TAG, "⚠️ 心率过快预警! 当前心率: %lu bpm, 基准心率: %lu bpm", 
+                     current_hr, Heart_Rate_Baseline);
+        }
+        return true;
+    } else {
+        if (Heart_Rate_Warning_Active) {
+            Heart_Rate_Warning_Active = false;
+            ESP_LOGI(TAG, "心率恢复正常: %lu bpm", current_hr);
+        }
+        return false;
+    }
+}
+
+// 获取基准心率
+uint32_t Max30102_Get_Heart_Rate_Baseline(void)
+{
+    return Heart_Rate_Baseline;
+}
+
+// 获取预警阈值
+uint32_t Max30102_Get_Heart_Rate_Warning_Threshold(void)
+{
+    return Heart_Rate_Warning_Threshold;
+}
+
+// 检查预警状态
+bool Max30102_Is_Heart_Rate_Warning_Active(void)
+{
+    return Heart_Rate_Warning_Active;
+}
+
+// 重置预警系统
+void Max30102_Reset_Heart_Rate_Warning(void)
+{
+    Heart_Rate_Baseline = 70;
+    Heart_Rate_Warning_Threshold = 90;
+    Heart_Rate_Stable_Count = 0;
+    Heart_Rate_Warning_Active = false;
+    Heart_Rate_Baseline_Initialized = false;
+    
+    for (int i = 0; i < HEART_RATE_BASELINE_SAMPLES; i++) {
+        Heart_Rate_Baseline_History[i] = Heart_Rate_Baseline;
+    }
+    
+    ESP_LOGI(TAG, "心率预警系统已重置");
+}
+
+esp_err_t Max30102_Read_Fifo(uint8_t *buffer, uint8_t count) {
+    return I2c_Read_Bytes(max30102_dev, REG_FIFO_DATA, buffer, count);
+}
+
+uint8_t Max30102_Can_Read(void) {
     return max30102_int_flag ? 1 : 0;
+}
+
+uint32_t Max301020_Get_Heart_Rate(void) {
+	return n_heart_rate;
+}
+
+uint32_t Max30102_Get_Spo2(void) {
+    return n_spo2;
 }
 
 // --- GPIO/ISR ---
 static void IRAM_ATTR max30102_isr_handler(void *arg) {
+    max30102_int_flag = true;
     if (notify_task) {
         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
         vTaskNotifyGiveFromISR(notify_task, &xHigherPriorityTaskWoken);
@@ -66,11 +213,11 @@ static void IRAM_ATTR max30102_isr_handler(void *arg) {
 }
 
 // 标志清除函数
-static inline void max30102_clear_flag(void) {
+void Max30102_Clear_Flag(void) {
     max30102_int_flag = false;
 }
 
-void max30102_gpio_isr_init(TaskHandle_t task_handle) {
+void Max30102_Gpio_Isr_Init(TaskHandle_t task_handle) {
     notify_task = task_handle;
     gpio_config_t io_conf = {
         .pin_bit_mask = 1ULL << MAX30102_INT_GPIO,
@@ -173,7 +320,7 @@ static void sort_ascend(int32_t *x, int32_t size) {
 }
 
 // --- 算法实现：计算心率和血氧 ---
-void max30102_algorithm_calculate(uint32_t *ir_buffer, int32_t buffer_len, uint32_t *red_buffer,
+void Max30102_Algorithm_Calculate(uint32_t *ir_buffer, int32_t buffer_len, uint32_t *red_buffer,
                                   int32_t *spo2, int8_t *spo2_valid,
                                   int32_t *heart_rate, int8_t *hr_valid) {
     static int32_t an_dx[MAX30102_BUFFER_SIZE];
@@ -314,9 +461,120 @@ void max30102_algorithm_calculate(uint32_t *ir_buffer, int32_t buffer_len, uint3
     }
 }
 
+// --- VOFA+ 原生格式波形数据输出 ---
+// 输出格式符合VOFA+的多通道数据要求: ch0,ch1,ch2,ch3\n
+void Max30102_Send_Waveform_Data(void) {
+    // 输出最后100个样本，每行一个样本数据
+    // 格式: RED值,IR值,心率,血氧
+    for (int i = 400; i < 500; i++) {
+        printf("%lu,%lu,%ld,%ld\n",
+               aun_red_buffer[i],       // ch0: 红光原始值(0-262143)
+               aun_ir_buffer[i],        // ch1: 红外光原始值(0-262143)
+               (long)n_heart_rate,      // ch2: 心率(bpm)
+               (long)n_spo2);           // ch3: 血氧饱和度(%)
+    }
+}
+
+// --- JSON格式输出 ---
+// 输出格式: {"id":随机ID,"params":{"heart_rate":{"value":心率,"time":时间戳},"oxygen_saturation":{"value":血氧,"time":时间戳},"seizure_risk_level":{"value":风险等级,"time":时间戳},"abnormal_motion_detected":{"value":异常运动检测,"time":时间}}}
+void Max30102_Send_JSON_Data(void)
+{
+    // 获取当前时间戳（秒）
+    uint32_t timestamp = (uint32_t)(esp_timer_get_time() / 1000000);
+    
+    // 计算癫痫风险等级（基于心率和血氧数据）
+    uint32_t seizure_risk_level = 0;
+    if (n_heart_rate > 100 || n_spo2 < 95) {
+        seizure_risk_level = 60;  // 中等风险
+    }
+    if (n_heart_rate > 120 || n_spo2 < 90) {
+        seizure_risk_level = 80;  // 高风险
+    }
+    if (Max30102_Is_Heart_Rate_Warning_Active()) {
+        seizure_risk_level = 90;  // 预警状态高风险
+    }
+    
+    // 异常运动检测（基于心率变化）
+    bool abnormal_motion_detected = (n_heart_rate > 120) || (n_heart_rate < 40);
+    
+    ESP_LOGI("", "{\"id\":%d,\"params\":{"
+             "\"heart_rate\":{\"value\":%ld,\"time\":%lu},"
+             "\"oxygen_saturation\":{\"value\":%ld,\"time\":%lu},"
+             "\"seizure_risk_level\":{\"value\":%lu,\"time\":%lu},"
+             "\"abnormal_motion_detected\":{\"value\":%d,\"time\":%lu}"
+             "}}\n", 
+             rand() % 10000,  // 随机ID
+             (long)n_heart_rate, timestamp,
+             (long)n_spo2, timestamp,
+             seizure_risk_level, timestamp,
+             abnormal_motion_detected ? 1 : 0, timestamp);
+}
+
 // --- MAX30102监测任务 ---
-void max30102_monitor_task(void *pvParameters) {
-    // 禁用 GPIO 和 I2C 的调试日志
+void Max30102_Monitor_Task_Single(void)
+{
+    uint8_t temp[6];
+    int32_t n_ir_buffer_length = IR_BUF_LEN;
+    int32_t un_min = UINT32_MAX, un_max = 0;
+    uint8_t fifo_wp, fifo_rp;
+    int samples_read;
+
+	ESP_LOGI(TAG, "单次读取心率和血氧...");
+
+    // 1. 读取500个样本
+    samples_read = 0;
+    ESP_LOGI(TAG, "开始采集样本...");
+    
+    while (samples_read < n_ir_buffer_length) 
+	{
+        Max30102_Read_Reg(0x04, &fifo_wp);  // FIFO_WR_PTR
+        Max30102_Read_Reg(0x06, &fifo_rp);  // FIFO_RD_PTR
+        
+        if (fifo_wp != fifo_rp) {
+            esp_err_t ret = Max30102_Read_Fifo(temp, 6);
+            if (ret != ESP_OK) {
+                continue;
+            }
+            
+            aun_red_buffer[samples_read] = ((temp[0] & 0x03) << 16) | (temp[1] << 8) | temp[2];
+            aun_ir_buffer[samples_read] = ((temp[3] & 0x03) << 16) | (temp[4] << 8) | temp[5];
+            if (un_min > aun_red_buffer[samples_read]) un_min = aun_red_buffer[samples_read];
+            if (un_max < aun_red_buffer[samples_read]) un_max = aun_red_buffer[samples_read];
+            
+            samples_read++;
+            
+            // 每读 100 个样本打印进度
+            if (samples_read % 100 == 0) {
+                ESP_LOGI(TAG, "已采集 %d 个样本", samples_read);
+            }
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(5));  // 没有数据时，稍微延迟后再读
+        }
+    }
+    
+    ESP_LOGI(TAG, "样本采集完成!");
+
+    // 2. 算法计算心率和血氧
+    Max30102_Algorithm_Calculate(aun_ir_buffer, n_ir_buffer_length, aun_red_buffer, &n_spo2, &ch_spo2_valid, &n_heart_rate, &ch_hr_valid);
+    
+    // 3. 输出结果
+    if (ch_hr_valid == 1 && ch_spo2_valid == 1) {
+        ESP_LOGI(TAG, "心率: %ld bpm, 血氧: %ld%%", (long)n_heart_rate, (long)n_spo2);
+    } else if (ch_hr_valid == 1) {
+        ESP_LOGI(TAG, "心率: %ld bpm, 血氧: 无效", (long)n_heart_rate);
+    } else if (ch_spo2_valid == 1) {
+        ESP_LOGI(TAG, "心率: 无效, 血氧: %ld%%", (long)n_spo2);
+    } else {
+        ESP_LOGW(TAG, "心率和血氧数据无效");
+    }
+
+    // 4. 清除中断标志，准备下一次读取
+    Max30102_Clear_Flag();
+    
+    ESP_LOGI(TAG, "单次读取完成，等待下一次中断...");
+}
+
+void Max30102_Monitor_Task(void *pvParameters) {
     esp_log_level_set("gpio", ESP_LOG_ERROR);
     esp_log_level_set("i2c", ESP_LOG_ERROR);
     
@@ -329,13 +587,20 @@ void max30102_monitor_task(void *pvParameters) {
     
     ESP_LOGI(TAG, "Monitor task started");
     
-    // 1. 初始化 I2C、GPIO、ISR
-    max30102_init();
+	i2c_master_bus_handle_t i2c_bus = I2c_Get_Global_Bus_Handle();
+    if (i2c_bus == NULL) {
+        ESP_LOGE(TAG, "无法获取I2C总线句柄");
+        vTaskDelete(NULL);
+        return;
+    }
+    
+    // 1. 初始化MAX30102设备
+    Max30102_Init(i2c_bus);
     vTaskDelay(pdMS_TO_TICKS(100));
     
     // 测试 I2C 通信
     uint8_t part_id = 0;
-    esp_err_t ret = max30102_read_reg(0xFF, &part_id);
+    esp_err_t ret = Max30102_Read_Reg(0xFF, &part_id);
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "Part ID: 0x%02X", part_id);
     } else {
@@ -346,19 +611,22 @@ void max30102_monitor_task(void *pvParameters) {
     
     // 检查中断状态和配置
     uint8_t intr_status, intr_en;
-    max30102_read_reg(0x00, &intr_status);  // INTR_STATUS_1
-    max30102_read_reg(0x02, &intr_en);      // INTR_ENABLE_1
-    max30102_read_reg(0x04, &fifo_wp);      // FIFO_WR_PTR
-    max30102_read_reg(0x06, &fifo_rp);      // FIFO_RD_PTR
+    Max30102_Read_Reg(0x00, &intr_status);  // INTR_STATUS_1
+    Max30102_Read_Reg(0x02, &intr_en);      // INTR_ENABLE_1
+    Max30102_Read_Reg(0x04, &fifo_wp);      // FIFO_WR_PTR
+    Max30102_Read_Reg(0x06, &fifo_rp);      // FIFO_RD_PTR
     ESP_LOGI(TAG, "INTR_STATUS: 0x%02X, INTR_EN: 0x%02X, FIFO_WP: %d, FIFO_RP: %d", 
         intr_status, intr_en, fifo_wp, fifo_rp);
     
-    max30102_gpio_isr_init(xTaskGetCurrentTaskHandle());
+    Max30102_Gpio_Isr_Init(xTaskGetCurrentTaskHandle());
     vTaskDelay(pdMS_TO_TICKS(100));
     
+    // 初始化心率预警系统
+    Max30102_Heart_Rate_Warning_Init();
+    
     // 再读一次 FIFO 指针，看是否有数据产生
-    max30102_read_reg(0x04, &fifo_wp);
-    max30102_read_reg(0x06, &fifo_rp);
+    Max30102_Read_Reg(0x04, &fifo_wp);
+    Max30102_Read_Reg(0x06, &fifo_rp);
     ESP_LOGI(TAG, "After ISR init - FIFO_WP: %d, FIFO_RP: %d", fifo_wp, fifo_rp);
 
     // 2. 读取前500个样本（改为轮询模式）
@@ -366,11 +634,11 @@ void max30102_monitor_task(void *pvParameters) {
     ESP_LOGI(TAG, "Starting sample collection...");
     
     while (samples_read < n_ir_buffer_length) {
-        max30102_read_reg(0x04, &fifo_wp);  // FIFO_WR_PTR
-        max30102_read_reg(0x06, &fifo_rp);  // FIFO_RD_PTR
+        Max30102_Read_Reg(0x04, &fifo_wp);  // FIFO_WR_PTR
+        Max30102_Read_Reg(0x06, &fifo_rp);  // FIFO_RD_PTR
         
         if (fifo_wp != fifo_rp) {
-            esp_err_t ret = max30102_read_fifo(temp, 6);
+            esp_err_t ret = Max30102_Read_Fifo(temp, 6);
             if (ret != ESP_OK) {
                 continue;
             }
@@ -394,7 +662,7 @@ void max30102_monitor_task(void *pvParameters) {
     ESP_LOGI(TAG, "Sample collection complete!");
 
     // 3. 算法计算
-    max30102_algorithm_calculate(aun_ir_buffer, n_ir_buffer_length, aun_red_buffer, &n_spo2, &ch_spo2_valid, &n_heart_rate, &ch_hr_valid);
+    Max30102_Algorithm_Calculate(aun_ir_buffer, n_ir_buffer_length, aun_red_buffer, &n_spo2, &ch_spo2_valid, &n_heart_rate, &ch_hr_valid);
     
     ESP_LOGI(TAG, "Ready for heartbeat monitoring...");
 
@@ -408,16 +676,16 @@ void max30102_monitor_task(void *pvParameters) {
             if (un_max < aun_red_buffer[i]) un_max = aun_red_buffer[i];
         }
         
-        // 采集新样本（轮询模式，加看门狗喂食）
+        // 采集新样本（轮询模式，定期喂狗）
         samples_read = 400;
         while (samples_read < 500) {
-            vTaskDelay(pdMS_TO_TICKS(1));  // 喂狗 + 让出CPU
+            vTaskDelay(pdMS_TO_TICKS(2));  // 让出CPU
             
-            max30102_read_reg(0x04, &fifo_wp);
-            max30102_read_reg(0x06, &fifo_rp);
+            Max30102_Read_Reg(0x04, &fifo_wp);
+            Max30102_Read_Reg(0x06, &fifo_rp);
             
             if (fifo_wp != fifo_rp) {
-                if (max30102_read_fifo(temp, 6) == ESP_OK) {
+                if (Max30102_Read_Fifo(temp, 6) == ESP_OK) {
                     aun_red_buffer[samples_read] = ((temp[0] & 0x03) << 16) | (temp[1] << 8) | temp[2];
                     aun_ir_buffer[samples_read] = ((temp[3] & 0x03) << 16) | (temp[4] << 8) | temp[5];
                     samples_read++;
@@ -426,12 +694,35 @@ void max30102_monitor_task(void *pvParameters) {
         }
         
         // 调用算法计算
-        max30102_algorithm_calculate(aun_ir_buffer, n_ir_buffer_length, aun_red_buffer, &n_spo2, &ch_spo2_valid, &n_heart_rate, &ch_hr_valid);
+        Max30102_Algorithm_Calculate(aun_ir_buffer, n_ir_buffer_length, aun_red_buffer, &n_spo2, &ch_spo2_valid, &n_heart_rate, &ch_hr_valid);
         
-        if (ch_hr_valid == 1 && n_heart_rate < 120 && ch_spo2_valid == 1 && n_spo2 < 101) {
-            ESP_LOGI(TAG, "HR=%ld; SpO2=%ld%%", (long)n_heart_rate, (long)n_spo2);
+        // 算法计算后喂狗
+        // esp_task_wdt_reset();
+        
+        // 心率预警检测
+        if (ch_hr_valid == 1) {
+            // 更新基准心率
+            Max30102_Update_Heart_Rate_Baseline((uint32_t)n_heart_rate);
+            
+            // 检查心率过快预警
+            bool warning_active = Max30102_Check_Heart_Rate_Warning((uint32_t)n_heart_rate);
+            
+            // 如果心率过快，记录预警信息
+            if (warning_active) {
+                ESP_LOGW(TAG, "癫痫早期症状检测: 心率过快! 当前: %ld bpm, 基准: %lu bpm, 阈值: %lu bpm", 
+                         (long)n_heart_rate, Max30102_Get_Heart_Rate_Baseline(), 
+                         Max30102_Get_Heart_Rate_Warning_Threshold());
+            }
+        }
+        
+        if (ch_hr_valid == 1 && n_heart_rate < 120 && ch_spo2_valid == 1 && n_spo2 < 101) 
+		{
+			max30102_int_flag = true;
         }
         
         vTaskDelay(pdMS_TO_TICKS(100));
     }
+    
+    // 任务永远不会到达这里，但为了完整性
+    vTaskDelete(NULL);
 }

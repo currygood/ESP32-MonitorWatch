@@ -8,14 +8,11 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_err.h"
+#include "i2c_driver.h"
 
 // --- 硬件映射 ---
-#define MAX30102_I2C_PORT I2C_NUM_0
-#define MAX30102_I2C_SDA_GPIO 4
-#define MAX30102_I2C_SCL_GPIO 5
 #define MAX30102_INT_GPIO 6
-#define MAX30102_I2C_FREQ 400000
-
 #define MAX30102_ADDR 0x57
 
 // --- 常用寄存器 ---
@@ -42,20 +39,45 @@
 #define IR_BUF_LEN               500
 #define RED_BUF_LEN              500
 
-// --- API声明 ---
-void max30102_init(void);
-void max30102_gpio_isr_init(TaskHandle_t task_handle);
-esp_err_t max30102_write_reg(uint8_t reg, uint8_t data);
-esp_err_t max30102_read_reg(uint8_t reg, uint8_t *data);
-esp_err_t max30102_read_fifo(uint8_t *buffer, uint8_t count);
-uint8_t max30102_can_read(void);
-static inline void max30102_clear_flag(void);
+// 心率预警相关配置
+#define HEART_RATE_BASELINE_SAMPLES     30    // 基准心率计算样本数
+#define HEART_RATE_WARNING_THRESHOLD_LOW 20    // 预警阈值下限（比基准高20）
+#define HEART_RATE_WARNING_THRESHOLD_HIGH 30   // 预警阈值上限（比基准高30）
+#define HEART_RATE_STABLE_COUNT          10    // 心率稳定连续次数
+#define HEART_RATE_MIN_VALID             40    // 最小有效心率
+#define HEART_RATE_MAX_VALID             180   // 最大有效心率
 
-void max30102_algorithm_calculate(uint32_t *ir_buffer, int32_t buffer_len, uint32_t *red_buffer,
+// --- API声明 ---
+void Max30102_Init(i2c_master_bus_handle_t bus_handle);
+void Max30102_Gpio_Isr_Init(TaskHandle_t task_handle);
+esp_err_t Max30102_Write_Reg(uint8_t reg, uint8_t data);
+esp_err_t Max30102_Read_Reg(uint8_t reg, uint8_t *data);
+esp_err_t Max30102_Read_Fifo(uint8_t *buffer, uint8_t count);
+uint8_t Max30102_Can_Read(void);
+void Max30102_Clear_Flag(void);
+
+void Max30102_Algorithm_Calculate(uint32_t *ir_buffer, int32_t buffer_len, uint32_t *red_buffer,
                                   int32_t *spo2, int8_t *spo2_valid,
                                   int32_t *heart_rate, int8_t *hr_valid);
 
 // --- 监测任务 ---
-void max30102_monitor_task(void *pvParameters);
+void Max30102_Monitor_Task_Single(void);
+void Max30102_Monitor_Task(void *pvParameters);
+
+
+// --- 数据输出 ---
+void Max30102_Send_Waveform_Data(void);
+void Max30102_Send_JSON_Data(void);
+uint32_t Max301020_Get_Heart_Rate(void);
+uint32_t Max30102_Get_Spo2(void);
+
+// --- 心率预警功能 ---
+void Max30102_Heart_Rate_Warning_Init(void);
+void Max30102_Update_Heart_Rate_Baseline(uint32_t current_hr);
+bool Max30102_Check_Heart_Rate_Warning(uint32_t current_hr);
+uint32_t Max30102_Get_Heart_Rate_Baseline(void);
+uint32_t Max30102_Get_Heart_Rate_Warning_Threshold(void);
+bool Max30102_Is_Heart_Rate_Warning_Active(void);
+void Max30102_Reset_Heart_Rate_Warning(void);
 
 #endif // MAX30102_H
