@@ -10,6 +10,7 @@
 #include "esp_log.h"
 #include "esp_err.h"
 #include "i2c_driver.h"
+#include "MessageQueue.h"
 
 // --- 硬件映射 --- 
 #define MPU6050_INT_GPIO      -1
@@ -37,6 +38,7 @@ esp_err_t Mpu6050_Read_Reg(uint8_t reg, uint8_t *data);
 esp_err_t Mpu6050_Read_Raw(int16_t *ax, int16_t *ay, int16_t *az,
                            int16_t *gx, int16_t *gy, int16_t *gz);
 
+// 检测摔倒或 convulsion	
 bool Mpu6050_Detect_Fall_Or_Convulsion(int16_t *ax_buf, int16_t *ay_buf, int16_t *az_buf, int len);
 
 // --- 标志位管理函数 ---

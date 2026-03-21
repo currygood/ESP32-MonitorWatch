@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <math.h>
 
+
 static const char *TAG = "MPU6050";
 
 static i2c_master_dev_handle_t mpu6050_dev = NULL;
@@ -172,7 +173,11 @@ void Mpu6050_Monitor_Task(void *pvParameters) {
             Mpu6050_Last_Gyro_Y = gy;
             Mpu6050_Last_Gyro_Z = gz;
             
-            // 设置数据就绪标志
+            // 通过消息队列发送加速度和陀螺仪数据
+            Message_Queue_Send_Accelerometer(ax, ay, az);
+            Message_Queue_Send_Gyroscope(gx, gy, gz);
+            
+            // 设置数据就绪标志（保持向后兼容性）
             Mpu6050_Data_Ready_Flag = true;
 
             if (buffer_idx < MPU6050_BUFFER_SIZE) {
@@ -187,6 +192,8 @@ void Mpu6050_Monitor_Task(void *pvParameters) {
 
                 if (alarm) {
                     ESP_LOGW(TAG, "ALARM! 可能癫痫抽搐或跌倒事件");
+                    // 通过消息队列发送跌倒/抽搐预警
+                    Message_Queue_Send_Alert(true, true, false);
                 }
 
                 int32_t sum_ax = 0, sum_ay = 0, sum_az = 0;

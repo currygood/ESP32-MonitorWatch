@@ -7,6 +7,7 @@
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
 
+
 static const char *TAG = "MAX30102";
 static i2c_master_dev_handle_t max30102_dev = NULL;
 static volatile bool max30102_int_flag = false;
@@ -713,11 +714,21 @@ void Max30102_Monitor_Task(void *pvParameters) {
                          (long)n_heart_rate, Max30102_Get_Heart_Rate_Baseline(), 
                          Max30102_Get_Heart_Rate_Warning_Threshold());
             }
-        }
-        
-        if (ch_hr_valid == 1 && n_heart_rate < 120 && ch_spo2_valid == 1 && n_spo2 < 101) 
-		{
-			max30102_int_flag = true;
+            
+            // 通过消息队列发送心率血氧数据
+            if (ch_spo2_valid == 1) {
+                Message_Queue_Send_Heart_Rate((uint32_t)n_heart_rate, (uint32_t)n_spo2, 
+                                             Max30102_Get_Heart_Rate_Baseline(), warning_active);
+            } else {
+                // 如果血氧数据无效，只发送心率数据
+                Message_Queue_Send_Heart_Rate((uint32_t)n_heart_rate, 0, 
+                                             Max30102_Get_Heart_Rate_Baseline(), warning_active);
+            }
+            
+            // 如果检测到预警，发送预警消息
+            if (warning_active) {
+                Message_Queue_Send_Alert(false, false, true);
+            }
         }
         
         vTaskDelay(pdMS_TO_TICKS(100));

@@ -2,12 +2,14 @@ set(src_dirs
     MAX30102/max30102.c
 	OLED/OLED.c
 	OLED/OLED_Font.c
-	MPU6050/MPU6050.c)
+	MPU6050/MPU6050.c
+	MessageQueue/MessageQueue.c)
 
 set(include_dirs
 	OLED
     MAX30102
-    MPU6050)
+    MPU6050
+	MessageQueue)
 
 set(requires
     driver

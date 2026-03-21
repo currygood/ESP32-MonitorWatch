@@ -10,6 +10,7 @@
 #include "esp_log.h"
 #include "esp_err.h"
 #include "i2c_driver.h"
+#include "MessageQueue.h"
 
 // --- 硬件映射 ---
 #define MAX30102_INT_GPIO 6
