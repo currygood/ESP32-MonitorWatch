@@ -12,21 +12,8 @@
 #include "MPU6050.h"
 #include "MessageQueue.h"
 
-// 消息队列定义
-#define OLED_QUEUE_LENGTH 10
-#define OLED_QUEUE_ITEM_SIZE sizeof(char[40])
 
-// 全局消息队列句柄
-QueueHandle_t Oled_Message_Queue = NULL;
-
-// 消息类型枚举
-enum {
-    MSG_TYPE_NORMAL = 0,
-    MSG_TYPE_HEART_RATE_WARNING,
-    MSG_TYPE_FALL_DETECTED
-};
-
-void MainControl(void *pvParameters)
+void Task_MainControl(void *pvParameters)
 {
 	// 等待各种硬件初始化完成
 	vTaskDelay(pdMS_TO_TICKS(1000));
@@ -55,11 +42,7 @@ void MainControl(void *pvParameters)
 							snprintf(warning_msg, sizeof(warning_msg), "Low SpO2: %lu%%", message.Data.Heart_Rate_Data.SpO2);
 						}
 						
-						// 发送警告消息到OLED任务
-						if (Oled_Message_Queue != NULL) {
-							xQueueSend(Oled_Message_Queue, warning_msg, pdMS_TO_TICKS(10));
-							ESP_LOGW("TASK_SENSOR", "Warning sent: %s", warning_msg);
-						}
+						
 					}
 					
 					// 发送JSON数据（保持原有功能）
@@ -92,11 +75,7 @@ void MainControl(void *pvParameters)
 							snprintf(alert_msg, sizeof(alert_msg), "Convulsion!");
 						}
 						
-						// 发送紧急预警消息到OLED任务
-						if (Oled_Message_Queue != NULL) {
-							xQueueSend(Oled_Message_Queue, alert_msg, pdMS_TO_TICKS(10));
-							ESP_LOGE("TASK_SENSOR", "Emergency alert: %s", alert_msg);
-						}
+						
 					}
 					break;
 					
@@ -107,68 +86,6 @@ void MainControl(void *pvParameters)
 		}
 
 		vTaskDelay(pdMS_TO_TICKS(100));	//每100ms处理一次数据
-	}
-}
-
-void OLED_Show(void *pvParameters)
-{
-	// 等待各种硬件初始化完成
-	vTaskDelay(pdMS_TO_TICKS(1000));
-
-	// 获取I2C总线句柄并初始化OLED
-	i2c_master_bus_handle_t i2c_bus = I2c_Get_Global_Bus_Handle();
-	if (i2c_bus != NULL) {
-		if (OLED_Init(i2c_bus) == ESP_OK) {
-			ESP_LOGI("OLED", "OLED初始化成功");
-			
-			// OLED显示初始化界面 - 64x128屏幕适配
-			OLED_Clear();
-			OLED_ShowString(1, 1, "Health Monitor");
-			OLED_ShowString(2, 1, "Status: Normal");
-			OLED_ShowString(4, 1, "HR: ---");
-			OLED_ShowString(5, 1, "SpO2: ---%");
-			OLED_ShowString(7, 1, "Ready");
-		} else {
-			ESP_LOGE("OLED", "OLED初始化失败");
-		}
-	} else {
-		ESP_LOGE("OLED", "无法获取I2C总线句柄");
-	}
-
-	char received_msg[40];
-	TickType_t last_warning_time = 0;
-	const TickType_t warning_duration = pdMS_TO_TICKS(5000); // 警告显示5秒
-	
-	while(1)
-	{
-		// 检查消息队列
-		if (Oled_Message_Queue != NULL) {
-			if (xQueueReceive(Oled_Message_Queue, received_msg, pdMS_TO_TICKS(100)) == pdTRUE) {
-				ESP_LOGI("OLED_QUEUE", "收到警告消息: %s", received_msg);
-				
-				// 在OLED上显示警告消息 - 适配64x128屏幕
-				OLED_ShowString(2, 1, "Status: ALERT!");
-				OLED_ShowString(6, 1, received_msg);
-				OLED_ShowString(7, 1, "Check Patient!");
-				
-				// 记录警告时间
-				last_warning_time = xTaskGetTickCount();
-			}
-		}
-		
-		// 检查是否需要清除警告显示
-		if (last_warning_time > 0) {
-			TickType_t current_time = xTaskGetTickCount();
-			if (current_time - last_warning_time > warning_duration) {
-				// 清除警告显示，恢复正常状态
-				OLED_ShowString(2, 1, "Status: Normal  ");
-				OLED_ShowString(6, 1, "              ");
-				OLED_ShowString(7, 1, "Monitoring...  ");
-				last_warning_time = 0;
-			}
-		}
-		
-		vTaskDelay(pdMS_TO_TICKS(100));
 	}
 }
 
@@ -184,17 +101,9 @@ void app_main(void)
 	
 	ESP_LOGI("APP_MAIN", "I2C总线初始化成功");
 	
-	// 创建消息队列
-	Oled_Message_Queue = xQueueCreate(OLED_QUEUE_LENGTH, OLED_QUEUE_ITEM_SIZE);
-	if (Oled_Message_Queue == NULL) {
-		ESP_LOGE("APP_MAIN", "消息队列创建失败");
-		return;
-	}
-	ESP_LOGI("APP_MAIN", "消息队列创建成功");
-	
 	// 创建任务
-	xTaskCreate(Max30102_Monitor_Task, "Max30102_Monitor_Task", 4096, NULL, 2, NULL);
-	xTaskCreate(Mpu6050_Monitor_Task, "Mpu6050_Monitor_Task", 4096, NULL, 2, NULL);
-	xTaskCreate(MainControl, "MainControl", 2048, NULL, 1, NULL);
-	xTaskCreate(OLED_Show,"OLED_Show",2048,NULL,1,NULL);
+	xTaskCreate(Task_Max30102_Monitor, "Task_Max30102_Monitor", 4096, NULL, 2, NULL);
+	xTaskCreate(Task_Mpu6050_Monitor, "Task_Mpu6050_Monitor", 4096, NULL, 2, NULL);
+	xTaskCreate(Task_MainControl, "MainControl", 2048, NULL, 1, NULL);
+	xTaskCreate(Task_OLED_Show,"Task_OLED_Show",2048,NULL,1,NULL);
 }

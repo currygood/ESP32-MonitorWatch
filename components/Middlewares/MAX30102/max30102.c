@@ -511,71 +511,8 @@ void Max30102_Send_JSON_Data(void)
              abnormal_motion_detected ? 1 : 0, timestamp);
 }
 
-// --- MAX30102监测任务 ---
-void Max30102_Monitor_Task_Single(void)
-{
-    uint8_t temp[6];
-    int32_t n_ir_buffer_length = IR_BUF_LEN;
-    int32_t un_min = UINT32_MAX, un_max = 0;
-    uint8_t fifo_wp, fifo_rp;
-    int samples_read;
-
-	ESP_LOGI(TAG, "单次读取心率和血氧...");
-
-    // 1. 读取500个样本
-    samples_read = 0;
-    ESP_LOGI(TAG, "开始采集样本...");
-    
-    while (samples_read < n_ir_buffer_length) 
-	{
-        Max30102_Read_Reg(0x04, &fifo_wp);  // FIFO_WR_PTR
-        Max30102_Read_Reg(0x06, &fifo_rp);  // FIFO_RD_PTR
-        
-        if (fifo_wp != fifo_rp) {
-            esp_err_t ret = Max30102_Read_Fifo(temp, 6);
-            if (ret != ESP_OK) {
-                continue;
-            }
-            
-            aun_red_buffer[samples_read] = ((temp[0] & 0x03) << 16) | (temp[1] << 8) | temp[2];
-            aun_ir_buffer[samples_read] = ((temp[3] & 0x03) << 16) | (temp[4] << 8) | temp[5];
-            if (un_min > aun_red_buffer[samples_read]) un_min = aun_red_buffer[samples_read];
-            if (un_max < aun_red_buffer[samples_read]) un_max = aun_red_buffer[samples_read];
-            
-            samples_read++;
-            
-            // 每读 100 个样本打印进度
-            if (samples_read % 100 == 0) {
-                ESP_LOGI(TAG, "已采集 %d 个样本", samples_read);
-            }
-        } else {
-            vTaskDelay(pdMS_TO_TICKS(5));  // 没有数据时，稍微延迟后再读
-        }
-    }
-    
-    ESP_LOGI(TAG, "样本采集完成!");
-
-    // 2. 算法计算心率和血氧
-    Max30102_Algorithm_Calculate(aun_ir_buffer, n_ir_buffer_length, aun_red_buffer, &n_spo2, &ch_spo2_valid, &n_heart_rate, &ch_hr_valid);
-    
-    // 3. 输出结果
-    if (ch_hr_valid == 1 && ch_spo2_valid == 1) {
-        ESP_LOGI(TAG, "心率: %ld bpm, 血氧: %ld%%", (long)n_heart_rate, (long)n_spo2);
-    } else if (ch_hr_valid == 1) {
-        ESP_LOGI(TAG, "心率: %ld bpm, 血氧: 无效", (long)n_heart_rate);
-    } else if (ch_spo2_valid == 1) {
-        ESP_LOGI(TAG, "心率: 无效, 血氧: %ld%%", (long)n_spo2);
-    } else {
-        ESP_LOGW(TAG, "心率和血氧数据无效");
-    }
-
-    // 4. 清除中断标志，准备下一次读取
-    Max30102_Clear_Flag();
-    
-    ESP_LOGI(TAG, "单次读取完成，等待下一次中断...");
-}
-
-void Max30102_Monitor_Task(void *pvParameters) {
+// --- 监测任务 ---
+void Task_Max30102_Monitor(void *pvParameters) {
     esp_log_level_set("gpio", ESP_LOG_ERROR);
     esp_log_level_set("i2c", ESP_LOG_ERROR);
     

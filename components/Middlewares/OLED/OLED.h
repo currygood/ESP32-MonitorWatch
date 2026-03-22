@@ -7,6 +7,8 @@
 #include "driver/gpio.h"
 #include "OLED_Font.h"
 #include "i2c_driver.h"
+#include "MessageQueue.h"
+#include "esp_log.h"
 
 // OLED设备地址定义
 #define OLED_ADDR 0x3C
@@ -34,5 +36,8 @@ void OLED_WriteData(uint8_t Data);
 
 // OLED设备句柄获取函数
 i2c_master_dev_handle_t OLED_Get_Device_Handle(void);
+
+// OLED显示任务
+void Task_OLED_Show(void *pvParameters);
 
 #endif

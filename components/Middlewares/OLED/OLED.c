@@ -325,3 +325,41 @@ void OLED_ShowBinNum(uint8_t Line, uint8_t Column, uint32_t Number, uint8_t Leng
 		OLED_ShowChar(Line, Column + i, Number / OLED_Pow(2, Length - i - 1) % 2 + '0');
 	}
 }
+
+// OLED显示任务
+void Task_OLED_Show(void *pvParameters)
+{
+	// 等待各种硬件初始化完成
+	vTaskDelay(pdMS_TO_TICKS(1000));
+
+	// 获取I2C总线句柄并初始化OLED
+	i2c_master_bus_handle_t i2c_bus = I2c_Get_Global_Bus_Handle();
+	if (i2c_bus != NULL) {
+		if (OLED_Init(i2c_bus) == ESP_OK) {
+			ESP_LOGI("OLED", "OLED初始化成功");
+			
+			// OLED显示初始化界面 - 64x128屏幕适配
+			OLED_Clear();
+			OLED_ShowString(1, 1, "Health Monitor");
+			OLED_ShowString(2, 1, "Status: Normal");
+			OLED_ShowString(4, 1, "HR: ---");
+			OLED_ShowString(5, 1, "SpO2: ---%");
+			OLED_ShowString(7, 1, "Ready");
+		} else {
+			ESP_LOGE("OLED", "OLED初始化失败");
+		}
+	} else {
+		ESP_LOGE("OLED", "无法获取I2C总线句柄");
+	}
+
+	char received_msg[40];
+	TickType_t last_warning_time = 0;
+	const TickType_t warning_duration = pdMS_TO_TICKS(5000); // 警告显示5秒
+	
+	while(1)
+	{
+		
+		
+		vTaskDelay(pdMS_TO_TICKS(100));
+	}
+}

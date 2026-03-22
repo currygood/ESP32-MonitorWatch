@@ -138,7 +138,7 @@ void Mpu6050_Get_Gyro_Data(int16_t *gx, int16_t *gy, int16_t *gz) {
 }
 
 // 监测任务
-void Mpu6050_Monitor_Task(void *pvParameters) {
+void Task_Mpu6050_Monitor(void *pvParameters) {
     esp_log_level_set("gpio", ESP_LOG_ERROR);
     esp_log_level_set("i2c", ESP_LOG_ERROR);
 

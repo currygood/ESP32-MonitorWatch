@@ -62,8 +62,7 @@ void Max30102_Algorithm_Calculate(uint32_t *ir_buffer, int32_t buffer_len, uint3
                                   int32_t *heart_rate, int8_t *hr_valid);
 
 // --- 监测任务 ---
-void Max30102_Monitor_Task_Single(void);
-void Max30102_Monitor_Task(void *pvParameters);
+void Task_Max30102_Monitor(void *pvParameters);
 
 
 // --- 数据输出 ---

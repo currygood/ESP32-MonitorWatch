@@ -6,6 +6,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 
+// 消息队列定义
+#define OLED_QUEUE_LENGTH 10
+#define OLED_QUEUE_ITEM_SIZE sizeof(char[40])
+
 // 消息类型枚举
 typedef enum {
     MESSAGE_TYPE_HEART_RATE = 0,
@@ -55,6 +59,13 @@ typedef struct {
         Alert_Data_t Alert_Data;
     } Data;
 } Sensor_Message_t;
+
+// 消息类型枚举
+enum {
+    MSG_TYPE_NORMAL = 0,
+    MSG_TYPE_HEART_RATE_WARNING,
+    MSG_TYPE_FALL_DETECTED
+};
 
 // 队列句柄声明
 extern QueueHandle_t Sensor_Message_Queue;
