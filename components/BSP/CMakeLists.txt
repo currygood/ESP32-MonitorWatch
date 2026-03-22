@@ -7,6 +7,7 @@ set(include_dirs
 	MQTT)
 
 set(requires
+	Middlewares
     driver)
 
 idf_component_register(SRCS "${src_dirs}"

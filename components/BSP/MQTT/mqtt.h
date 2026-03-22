@@ -2,6 +2,18 @@
 #define __MQTT_H__
 
 #include "esp_err.h"
+#include "MessageQueue.h"
+#include "freertos/task.h"
+#include "time.h"
+#include "stdlib.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
+#include "esp_wifi.h"
+#include "esp_event.h"
+#include "esp_log.h"
+#include "nvs_flash.h"
+#include "mqtt_client.h"
+#include "esp_sntp.h"
 
 // WiFi配置
 // 建议：将以下敏感信息存储在 NVS 或通过环境变量传递，避免明文存储
@@ -27,11 +39,15 @@ typedef struct {
     int timestamp;                 // 时间戳
 } sensor_data_t;
 
-esp_err_t wifi_init(void);
-esp_err_t mqtt_app_start(void);
-esp_err_t mqtt_publish(const char *topic, const char *data, int len);
+esp_err_t Wifi_Init(void);
+esp_err_t MQTT_App_Start(void);
+esp_err_t MQTT_Publish(const char *topic, const char *data, int len);
 
 // 传感器数据相关函数
 void generate_sensor_data(sensor_data_t *data);
+
+
+// MQTT消息处理任务函数
+esp_err_t Task_MQTT_Message_Handler(void *pvParameters);
 
 #endif

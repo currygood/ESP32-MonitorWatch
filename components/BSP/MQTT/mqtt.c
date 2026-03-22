@@ -1,26 +1,24 @@
-#include "freertos/FreeRTOS.h"
-#include "freertos/event_groups.h"
-#include "esp_wifi.h"
-#include "esp_event.h"
-#include "esp_log.h"
-#include "nvs_flash.h"
-#include "mqtt_client.h"
 #include "mqtt.h"
-#include "freertos/task.h"
-#include "time.h"
-#include "stdlib.h"
+
 
 static const char *TAG = "MQTT";
 
 static EventGroupHandle_t wifi_event_group;
 static esp_mqtt_client_handle_t mqtt_client = NULL;
 static TaskHandle_t sensor_task_handle = NULL;
+static TaskHandle_t mqtt_message_task_handle = NULL;
 
 #define WIFI_CONNECTED_BIT BIT0
 #define MQTT_CONNECTED_BIT BIT1
 #define MAX_RETRY_COUNT    5
 static int retry_count = 0;
 static bool mqtt_connected = false;
+static int mqtt_error_count = 0;
+static int wifi_error_count = 0;
+static int publish_error_count = 0;
+static int publish_success_count = 0;
+static const int ERROR_LOG_INTERVAL = 10;  // 每10次错误才记录一次日志
+static const int SUCCESS_LOG_INTERVAL = 10;  // 每10次成功才记录一次日志
 
 
 
@@ -126,11 +124,14 @@ static void mqtt_event_handler(void *arg, esp_event_base_t base, int32_t id, voi
                      event->topic_len, event->topic, event->data_len, event->data);
             break;
         case MQTT_EVENT_ERROR:
-            ESP_LOGE(TAG, "MQTT 发生错误");
-            if (event->error_handle) {
-                ESP_LOGE(TAG, "错误类型: %d", event->error_handle->error_type);
-                if (event->error_handle->connect_return_code != 0) {
-                    ESP_LOGE(TAG, "连接返回码: %d", event->error_handle->connect_return_code);
+            mqtt_error_count++;
+            if (mqtt_error_count % ERROR_LOG_INTERVAL == 1) {
+                ESP_LOGE(TAG, "MQTT 发生错误 (错误计数: %d)", mqtt_error_count);
+                if (event->error_handle) {
+                    ESP_LOGE(TAG, "错误类型: %d", event->error_handle->error_type);
+                    if (event->error_handle->connect_return_code != 0) {
+                        ESP_LOGE(TAG, "连接返回码: %d", event->error_handle->connect_return_code);
+                    }
                 }
             }
             break;
@@ -199,21 +200,26 @@ static void sensor_report_task(void *arg)
             // sensor_data.abnormal_motion_detected ? "true" : "false",   // bool值转为字符串
             // timestamp_ms);
 
-            // 打印传感器数据到串口终端
-            ESP_LOGW(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-            ESP_LOGW(TAG, "📊 传感器数据:");
-            ESP_LOGW(TAG, "   心率: %d 次/分钟", sensor_data.heart_rate);
-            ESP_LOGW(TAG, "   血氧饱和度: %d%%", sensor_data.oxygen_saturation);
-            ESP_LOGW(TAG, "   癫癎风险等级: %d/100", sensor_data.seizure_risk_level);
-            ESP_LOGW(TAG, "   异常运动检测: %s", sensor_data.abnormal_motion_detected ? "是" : "否");
-            ESP_LOGW(TAG, "   时间戳: %lld", timestamp_ms);
-            ESP_LOGW(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-            ESP_LOGW(TAG, "上报JSON: %s", json_data);
-            ESP_LOGW(TAG, "数据ID固定为: 12345");
+            // 打印传感器数据到串口终端（限流输出）
+            publish_success_count++;
+            if (publish_success_count % SUCCESS_LOG_INTERVAL == 1) {
+                ESP_LOGW(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                ESP_LOGW(TAG, "📊 传感器数据 (发送计数: %d):", publish_success_count);
+                ESP_LOGW(TAG, "   心率: %d 次/分钟", sensor_data.heart_rate);
+                ESP_LOGW(TAG, "   血氧饱和度: %d%%", sensor_data.oxygen_saturation);
+                ESP_LOGW(TAG, "   癫癎风险等级: %d/100", sensor_data.seizure_risk_level);
+                ESP_LOGW(TAG, "   异常运动检测: %s", sensor_data.abnormal_motion_detected ? "是" : "否");
+                ESP_LOGW(TAG, "   时间戳: %lld", timestamp_ms);
+                ESP_LOGW(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                ESP_LOGW(TAG, "上报JSON: %s", json_data);
+                ESP_LOGW(TAG, "数据ID固定为: 12345");
+            }
 
             // 发布到OneNET物模型主题
-            ESP_LOGI(TAG, "🚀 正在发布数据到主题: %s", SENSOR_REPORT_TOPIC);
-            esp_err_t ret = mqtt_publish(SENSOR_REPORT_TOPIC, json_data, 0);
+            if (publish_success_count % SUCCESS_LOG_INTERVAL == 1) {
+                ESP_LOGI(TAG, "🚀 正在发布数据到主题: %s", SENSOR_REPORT_TOPIC);
+            }
+            esp_err_t ret = MQTT_Publish(SENSOR_REPORT_TOPIC, json_data, 0);
             
             if (ret == ESP_OK) {
                 // 根据风险等级显示不同级别的警告
@@ -234,7 +240,10 @@ static void sensor_report_task(void *arg)
                              sensor_data.abnormal_motion_detected ? "是" : "否");
                 }
             } else {
-                ESP_LOGE(TAG, "❌ 数据上报失败");
+                publish_error_count++;
+                if (publish_error_count % ERROR_LOG_INTERVAL == 1) {
+                    ESP_LOGE(TAG, "❌ 数据上报失败 (失败计数: %d)", publish_error_count);
+                }
             }
         }
         
@@ -246,7 +255,7 @@ static void sensor_report_task(void *arg)
     }
 }
 
-esp_err_t wifi_init(void)
+esp_err_t Wifi_Init(void)
 {
     wifi_event_group = xEventGroupCreate();
     if (wifi_event_group == NULL) {
@@ -295,7 +304,7 @@ esp_err_t wifi_init(void)
     }
 }
 
-esp_err_t mqtt_app_start(void)
+esp_err_t MQTT_App_Start(void)
 {
     ESP_LOGW(TAG, ">>> 开始初始化MQTT客户端...");
     
@@ -334,7 +343,7 @@ esp_err_t mqtt_app_start(void)
     return ESP_OK;
 }
 
-esp_err_t mqtt_publish(const char *topic, const char *data, int len)
+esp_err_t MQTT_Publish(const char *topic, const char *data, int len)
 {
     if (mqtt_client == NULL) {
         ESP_LOGE(TAG, "MQTT 未初始化");
@@ -353,4 +362,217 @@ esp_err_t mqtt_publish(const char *topic, const char *data, int len)
 
     ESP_LOGI(TAG, "发布成功 - 主题: %s, msg_id: %d", topic, msg_id);
     return ESP_OK;
+}
+
+// MQTT消息处理任务
+esp_err_t Task_MQTT_Message_Handler(void *pvParameters)
+{
+    ESP_LOGW(TAG, ">>> MQTT消息处理任务启动");
+    
+    // 智能NVS管理：只在需要时清除 
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_LOGI(TAG, "检测到NVS需要清理，正在清除并重新初始化...");
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+        ESP_LOGI(TAG, "NVS存储已成功清除并重新初始化");
+    } else if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "NVS初始化成功，保留现有配置");
+    } else {
+        ESP_LOGE(TAG, "NVS初始化失败: %s", esp_err_to_name(ret));
+        ESP_LOGI(TAG, "尝试强制清除NVS...");
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+        ESP_LOGI(TAG, "NVS已强制清除并重新初始化");
+    }
+    ESP_ERROR_CHECK(ret);
+
+    // 连接WiFi
+    ESP_LOGI(TAG, "正在连接WiFi...");
+    ret = Wifi_Init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "WiFi 初始化失败，已在 Wifi_Init 内处理重启");
+        vTaskDelete(NULL);
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "WiFi 连接成功！");
+
+    // 手机热点经常需要额外时间让 NAT/路由稳定
+    ESP_LOGI(TAG, "额外等待网络完全稳定（手机热点常用）...");
+    vTaskDelay(pdMS_TO_TICKS(5000));
+
+    // ====================== NTP 时间同步（ESP-IDF v5.4 正确写法） ======================
+    ESP_LOGI(TAG, "正在同步 NTP 时间（用于物模型时间戳）...");
+    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "cn.pool.ntp.org");
+    esp_sntp_setservername(1, "ntp.aliyun.com");
+    esp_sntp_setservername(2, "pool.ntp.org");  // 增加备用NTP服务器
+    esp_sntp_init();
+
+    // 等待更长时间进行NTP同步，并多次检查
+    for (int i = 0; i < 15; i++) {  // 检查15次，总共15秒
+        time_t now = time(NULL);
+        if (now > 1000000000LL) {  // 时间戳有效
+            ESP_LOGI(TAG, "✅ NTP 时间同步成功！当前时间戳: %lld (秒)", (long long)now);
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        ESP_LOGI(TAG, "⏳ 等待NTP时间同步... (%d/15秒)", i + 1);
+    }
+
+    time_t now = time(NULL);
+    if (now < 1000000000LL) {
+        ESP_LOGW(TAG, "⚠️ NTP 同步未完成，使用系统时间，可能影响时间戳准确性");
+    }
+    // ===========================================================================
+
+    // 启动MQTT
+    ESP_LOGI(TAG, "启动 MQTT 客户端...");
+    ret = MQTT_App_Start();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "MQTT 启动失败，错误码: %s", esp_err_to_name(ret));
+        vTaskDelete(NULL);
+        return ESP_FAIL;
+    } else {
+        ESP_LOGI(TAG, "MQTT 已启动");
+    }
+
+    // 等待MQTT连接建立
+    ESP_LOGI(TAG, "等待MQTT连接建立...");
+    for (int i = 0; i < 10; i++) {
+        if (mqtt_connected) {
+            ESP_LOGI(TAG, "✅ MQTT连接已建立");
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        ESP_LOGI(TAG, "⏳ 等待MQTT连接... (%d/10秒)", i + 1);
+    }
+
+    if (!mqtt_connected) {
+        ESP_LOGW(TAG, "⚠️ MQTT连接未建立，但将继续处理消息队列");
+    }
+
+    ESP_LOGI(TAG, "✅ MQTT消息处理任务初始化完成，开始处理消息队列...");
+    
+    while (1) {
+        Sensor_Message_t message;
+        
+        // 从消息队列接收数据（阻塞方式，最多等待100ms）
+        if (Message_Queue_Receive(&message, pdMS_TO_TICKS(100))) {
+            // 只在MQTT连接时处理消息
+            if (mqtt_client != NULL && mqtt_connected) {
+                char json_data[400];
+                long long timestamp_ms;
+                time_t current_time = time(NULL);
+                
+                if (current_time > 1000000000LL) {
+                    // NTP同步成功，使用真实时间戳
+                    timestamp_ms = (long long)current_time * 1000LL;
+                } else {
+                    // NTP同步失败，使用启动后的相对时间 + 基准时间（2024年1月1日）
+                    static time_t start_time = 0;
+                    if (start_time == 0) start_time = current_time;
+                    timestamp_ms = (long long)(1704067200LL + (current_time - start_time)) * 1000LL;
+                }
+                
+                switch (message.Message_Type) {
+                    case MESSAGE_TYPE_HEART_RATE:
+                        // 处理心率血氧数据
+                        snprintf(json_data, sizeof(json_data),
+                                "{\"id\":\"%d\",\"version\":\"1.0\",\"params\":{"
+                                "\"heart_rate\":{\"value\":%lu,\"time\":%lld},"
+                                "\"oxygen_saturation\":{\"value\":%lu,\"time\":%lld},"
+                                "\"heart_rate_baseline\":{\"value\":%lu,\"time\":%lld},"
+                                "\"heart_rate_warning\":{\"value\":%s,\"time\":%lld}"
+                                "}}",
+                                12346,  // 与原有任务不同的ID
+                                message.Data.Heart_Rate_Data.Heart_Rate, timestamp_ms,
+                                message.Data.Heart_Rate_Data.SpO2, timestamp_ms,
+                                message.Data.Heart_Rate_Data.Baseline, timestamp_ms,
+                                message.Data.Heart_Rate_Data.Warning_Active ? "true" : "false", timestamp_ms);
+                        
+                        ESP_LOGI(TAG, "📊 处理心率血氧数据 - 心率: %lu, 血氧: %lu, 基准: %lu, 预警: %s",
+                                message.Data.Heart_Rate_Data.Heart_Rate,
+                                message.Data.Heart_Rate_Data.SpO2,
+                                message.Data.Heart_Rate_Data.Baseline,
+                                message.Data.Heart_Rate_Data.Warning_Active ? "是" : "否");
+                        break;
+                        
+                    case MESSAGE_TYPE_ACCELEROMETER:
+                        // 处理加速度计数据
+                        snprintf(json_data, sizeof(json_data),
+                                "{\"id\":\"%d\",\"version\":\"1.0\",\"params\":{"
+                                "\"accelerometer_x\":{\"value\":%d,\"time\":%lld},"
+                                "\"accelerometer_y\":{\"value\":%d,\"time\":%lld},"
+                                "\"accelerometer_z\":{\"value\":%d,\"time\":%lld}"
+                                "}}",
+                                12347,
+                                message.Data.Accelerometer_Data.Accel_X, timestamp_ms,
+                                message.Data.Accelerometer_Data.Accel_Y, timestamp_ms,
+                                message.Data.Accelerometer_Data.Accel_Z, timestamp_ms);
+                        
+                        ESP_LOGI(TAG, "📊 处理加速度计数据 - X: %d, Y: %d, Z: %d",
+                                message.Data.Accelerometer_Data.Accel_X,
+                                message.Data.Accelerometer_Data.Accel_Y,
+                                message.Data.Accelerometer_Data.Accel_Z);
+                        break;
+                        
+                    case MESSAGE_TYPE_GYROSCOPE:
+                        // 处理陀螺仪数据
+                        snprintf(json_data, sizeof(json_data),
+                                "{\"id\":\"%d\",\"version\":\"1.0\",\"params\":{"
+                                "\"gyroscope_x\":{\"value\":%d,\"time\":%lld},"
+                                "\"gyroscope_y\":{\"value\":%d,\"time\":%lld},"
+                                "\"gyroscope_z\":{\"value\":%d,\"time\":%lld}"
+                                "}}",
+                                12348,
+                                message.Data.Gyroscope_Data.Gyro_X, timestamp_ms,
+                                message.Data.Gyroscope_Data.Gyro_Y, timestamp_ms,
+                                message.Data.Gyroscope_Data.Gyro_Z, timestamp_ms);
+                        
+                        ESP_LOGI(TAG, "📊 处理陀螺仪数据 - X: %d, Y: %d, Z: %d",
+                                message.Data.Gyroscope_Data.Gyro_X,
+                                message.Data.Gyroscope_Data.Gyro_Y,
+                                message.Data.Gyroscope_Data.Gyro_Z);
+                        break;
+                        
+                    case MESSAGE_TYPE_ALERT:
+                        // 处理预警消息
+                        snprintf(json_data, sizeof(json_data),
+                                "{\"id\":\"%d\",\"version\":\"1.0\",\"params\":{"
+                                "\"fall_detected\":{\"value\":%s,\"time\":%lld},"
+                                "\"convulsion_detected\":{\"value\":%s,\"time\":%lld},"
+                                "\"heart_rate_warning\":{\"value\":%s,\"time\":%lld}"
+                                "}}",
+                                12349,
+                                message.Data.Alert_Data.Fall_Detected ? "true" : "false", timestamp_ms,
+                                message.Data.Alert_Data.Convulsion_Detected ? "true" : "false", timestamp_ms,
+                                message.Data.Alert_Data.Heart_Rate_Warning ? "true" : "false", timestamp_ms);
+                        
+                        ESP_LOGW(TAG, "🚨 处理预警消息 - 跌倒: %s, 抽搐: %s, 心率预警: %s",
+                                message.Data.Alert_Data.Fall_Detected ? "是" : "否",
+                                message.Data.Alert_Data.Convulsion_Detected ? "是" : "否",
+                                message.Data.Alert_Data.Heart_Rate_Warning ? "是" : "否");
+                        break;
+                        
+                    default:
+                        ESP_LOGW(TAG, "未知消息类型: %d", message.Message_Type);
+                        continue; // 跳过未知消息类型
+                }
+                
+                // 发布到OneNET物模型主题
+                esp_err_t ret = MQTT_Publish(SENSOR_REPORT_TOPIC, json_data, 0);
+                if (ret == ESP_OK) {
+                    ESP_LOGI(TAG, "✅ 消息成功发送到MQTT平台");
+                } else {
+                    ESP_LOGE(TAG, "❌ 消息发送失败");
+                }
+            } else {
+                ESP_LOGW(TAG, "⚠️ MQTT未连接，跳过消息处理");
+            }
+        }
+        
+        // 短暂延迟，避免过度占用CPU
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
 }

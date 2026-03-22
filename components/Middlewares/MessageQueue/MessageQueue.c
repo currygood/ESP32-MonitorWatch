@@ -6,6 +6,8 @@ static const char *TAG = "MESSAGE_QUEUE";
 
 // 消息队列句柄
 QueueHandle_t Sensor_Message_Queue = NULL;
+static bool queue_init_error_logged = false;
+static bool queue_not_init_error_logged = false;
 
 // 消息队列初始化
 bool Message_Queue_Init(void)
@@ -14,11 +16,16 @@ bool Message_Queue_Init(void)
     Sensor_Message_Queue = xQueueCreate(10, sizeof(Sensor_Message_t));
     
     if (Sensor_Message_Queue == NULL) {
-        ESP_LOGE(TAG, "消息队列创建失败");
+        if (!queue_init_error_logged) {
+            ESP_LOGE(TAG, "消息队列创建失败");
+            queue_init_error_logged = true;
+        }
         return false;
     }
     
     ESP_LOGI(TAG, "消息队列初始化成功");
+    queue_init_error_logged = false;
+    queue_not_init_error_logged = false;
     return true;
 }
 
@@ -26,7 +33,10 @@ bool Message_Queue_Init(void)
 bool Message_Queue_Send_Heart_Rate(uint32_t heart_rate, uint32_t spo2, uint32_t baseline, bool warning_active)
 {
     if (Sensor_Message_Queue == NULL) {
-        ESP_LOGE(TAG, "消息队列未初始化");
+        if (!queue_not_init_error_logged) {
+            ESP_LOGE(TAG, "消息队列未初始化");
+            queue_not_init_error_logged = true;
+        }
         return false;
     }
     
@@ -55,7 +65,10 @@ bool Message_Queue_Send_Heart_Rate(uint32_t heart_rate, uint32_t spo2, uint32_t 
 bool Message_Queue_Send_Accelerometer(int16_t ax, int16_t ay, int16_t az)
 {
     if (Sensor_Message_Queue == NULL) {
-        ESP_LOGE(TAG, "消息队列未初始化");
+        if (!queue_not_init_error_logged) {
+            ESP_LOGE(TAG, "消息队列未初始化");
+            queue_not_init_error_logged = true;
+        }
         return false;
     }
     

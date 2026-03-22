@@ -11,6 +11,7 @@
 #include "OLED_Font.h"
 #include "MPU6050.h"
 #include "MessageQueue.h"
+#include "mqtt.h"
 
 
 void Task_MainControl(void *pvParameters)
@@ -101,9 +102,20 @@ void app_main(void)
 	
 	ESP_LOGI("APP_MAIN", "I2C总线初始化成功");
 	
+	// 初始化消息队列
+	if (!Message_Queue_Init()) {
+		ESP_LOGE("TASK_SENSOR", "消息队列初始化失败");
+	}
+
+	vTaskDelay(pdMS_TO_TICKS(500)); 	//等待500ms，确保I2C总线和MessageQueue初始化完成
+
 	// 创建任务
 	xTaskCreate(Task_Max30102_Monitor, "Task_Max30102_Monitor", 4096, NULL, 2, NULL);
 	xTaskCreate(Task_Mpu6050_Monitor, "Task_Mpu6050_Monitor", 4096, NULL, 2, NULL);
-	xTaskCreate(Task_MainControl, "MainControl", 2048, NULL, 1, NULL);
-	xTaskCreate(Task_OLED_Show,"Task_OLED_Show",2048,NULL,1,NULL);
+	xTaskCreate(Task_MQTT_Message_Handler,"Task_MQTT_Message_Handler",4096,NULL,3,NULL);
+	//xTaskCreate(Task_MainControl, "MainControl", 2048, NULL, 1, NULL);
+	xTaskCreate(Task_OLED_Show,"Task_OLED_Show",2048,NULL,2,NULL);
+
+	// 短暂延迟确保任务启动，然后让app_main自然结束
+    vTaskDelay(pdMS_TO_TICKS(100));
 }
