@@ -994,6 +994,8 @@ void Task_OLED_Show(void *pvParameters)
 					
 				case MESSAGE_TYPE_ACCELEROMETER:
 					// 处理加速度计数据
+					OLED_ShowNum(0,40,312,3,OLED_6X8);
+					
 					break;
 					
 				case MESSAGE_TYPE_GYROSCOPE:
