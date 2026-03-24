@@ -1,7 +1,7 @@
 set(src_dirs
     MAX30102/max30102.c
 	OLED/OLED.c
-	OLED/OLED_Font.c
+	OLED/OLED_Data.c
 	MPU6050/MPU6050.c
 	MessageQueue/MessageQueue.c)
 
@@ -21,3 +21,5 @@ idf_component_register(SRCS "${src_dirs}"
 					   REQUIRES esp_timer driver)
 
 component_compile_options(-ffast-math -O3 -Wno-format)
+add_compile_options(-fdiagnostics-color=always)
+add_compile_options(-Wno-missing-braces)

@@ -458,7 +458,7 @@ esp_err_t Task_MQTT_Message_Handler(void *pvParameters)
         Sensor_Message_t message;
         
         // 从消息队列接收数据（阻塞方式，最多等待100ms）
-        if (Message_Queue_Receive(&message, pdMS_TO_TICKS(100))) {
+        if (Message_Queue_Receive(QUEUE_TYPE_MQTT,&message, pdMS_TO_TICKS(100))) {
             // 只在MQTT连接时处理消息
             if (mqtt_client != NULL && mqtt_connected) {
                 char json_data[400];
