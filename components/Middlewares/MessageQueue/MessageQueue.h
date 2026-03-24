@@ -12,8 +12,7 @@
 
 // 消息类型枚举
 typedef enum {
-    MESSAGE_TYPE_HEART_RATE = 0,
-    MESSAGE_TYPE_SPO2,
+    MESSAGE_TYPE_HEART_RATE_SPO2 = 0,
     MESSAGE_TYPE_ACCELEROMETER,
     MESSAGE_TYPE_GYROSCOPE,
     MESSAGE_TYPE_ALERT
@@ -25,7 +24,7 @@ typedef struct {
     uint32_t SpO2;                 // 血氧饱和度 (%)
     uint32_t Baseline;             // 基准心率
     bool Warning_Active;           // 预警状态
-} Heart_Rate_Data_t;
+} Heart_Rate_SPO2_Data_t;
 
 // 加速度计数据结构体
 typedef struct {
@@ -53,7 +52,7 @@ typedef struct {
     Message_Type_t Message_Type;   // 消息类型
     uint32_t Timestamp;            // 时间戳
     union {
-        Heart_Rate_Data_t Heart_Rate_Data;
+        Heart_Rate_SPO2_Data_t Heart_Rate_SPO2_Data;
         Accelerometer_Data_t Accelerometer_Data;
         Gyroscope_Data_t Gyroscope_Data;
         Alert_Data_t Alert_Data;

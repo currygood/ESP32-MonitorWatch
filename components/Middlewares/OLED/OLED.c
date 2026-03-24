@@ -969,11 +969,10 @@ void Task_OLED_Show(void *pvParameters)
 			OLED_Clear();
 			OLED_ShowString(0, 0, "Health Monitor",OLED_6X8);
 			OLED_ShowString(0, 8, "Status: Normal",OLED_6X8);
-			OLED_ShowString(0, 16, "HR: ---",OLED_6X8);
-			OLED_ShowString(0, 24, "SpO2: ---%",OLED_6X8);
+			OLED_ShowString(0, 16, "HR:---",OLED_6X8);
+			OLED_ShowString(0, 24, "SpO2:---%",OLED_6X8);
 			OLED_ShowString(0, 32, "Ready",OLED_6X8);
 			OLED_Update();
-			while(1);
 		} else {
 			ESP_LOGE("OLED", "OLED初始化失败");
 		}
@@ -983,9 +982,38 @@ void Task_OLED_Show(void *pvParameters)
 	
 	while(1)
 	{
-		
-		
-		OLED_Update();
+		Sensor_Message_t message;
+		if(Message_Queue_Receive(Message_Queue_Get_Handle(QUEUE_TYPE_OLED),&message, pdMS_TO_TICKS(100))){
+		// 处理消息
+			switch (message.Message_Type) {
+				case MESSAGE_TYPE_HEART_RATE_SPO2:
+					// 处理心率数据
+					OLED_ShowNum(18,16,message.Data.Heart_Rate_SPO2_Data.Heart_Rate,3,OLED_6X8);
+					OLED_ShowNum(30,24,message.Data.Heart_Rate_SPO2_Data.SpO2,3,OLED_6X8);
+					break;
+					
+				case MESSAGE_TYPE_ACCELEROMETER:
+					// 处理加速度计数据
+					break;
+					
+				case MESSAGE_TYPE_GYROSCOPE:
+					// 处理陀螺仪数据
+
+					break;
+					
+				case MESSAGE_TYPE_ALERT:
+					// 处理预警消息
+					
+					break;
+					
+				default:
+					ESP_LOGW(TAG, "未知消息类型: %d", message.Message_Type);
+					continue; // 跳过未知消息类型
+			}
+			OLED_Update();
+		}
+
+		// OLED_Update();
 		
 		vTaskDelay(pdMS_TO_TICKS(100));
 	}

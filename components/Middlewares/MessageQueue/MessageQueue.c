@@ -43,13 +43,13 @@ bool Message_Queue_Send_Heart_Rate(uint32_t heart_rate, uint32_t spo2, uint32_t 
     }
     
     Sensor_Message_t message;
-    message.Message_Type = MESSAGE_TYPE_HEART_RATE;
+    message.Message_Type = MESSAGE_TYPE_HEART_RATE_SPO2;
     message.Timestamp = (uint32_t)(esp_timer_get_time() / 1000); // 毫秒时间戳
     
-    message.Data.Heart_Rate_Data.Heart_Rate = heart_rate;
-    message.Data.Heart_Rate_Data.SpO2 = spo2;
-    message.Data.Heart_Rate_Data.Baseline = baseline;
-    message.Data.Heart_Rate_Data.Warning_Active = warning_active;
+    message.Data.Heart_Rate_SPO2_Data.Heart_Rate = heart_rate;
+    message.Data.Heart_Rate_SPO2_Data.SpO2 = spo2;
+    message.Data.Heart_Rate_SPO2_Data.Baseline = baseline;
+    message.Data.Heart_Rate_SPO2_Data.Warning_Active = warning_active;
     
     BaseType_t result_MQTT = xQueueSend(Sensor_Message_Queue_TO_MQTT, &message, pdMS_TO_TICKS(100));
     BaseType_t result_OLED = xQueueSend(Sensor_Message_Queue_TO_OLED, &message, pdMS_TO_TICKS(100));
@@ -63,7 +63,8 @@ bool Message_Queue_Send_Heart_Rate(uint32_t heart_rate, uint32_t spo2, uint32_t 
         return false;
     }
 
-	return true;
+	if(result_OLED==pdTRUE)
+		return true;
 }
 
 // 发送加速度计数据消息
@@ -97,7 +98,8 @@ bool Message_Queue_Send_Accelerometer(int16_t ax, int16_t ay, int16_t az)
     }
 
 
-	return true;
+	if(result_OLED==pdTRUE)
+		return true;
 }
 
 // 发送陀螺仪数据消息
@@ -128,7 +130,8 @@ bool Message_Queue_Send_Gyroscope(int16_t gx, int16_t gy, int16_t gz)
     }
 
 	
-	return true;
+	if(result_OLED==pdTRUE)
+		return true;
 }
 
 // 发送预警消息
@@ -159,7 +162,8 @@ bool Message_Queue_Send_Alert(bool fall_detected, bool convulsion_detected, bool
         return false;
     }
 
-	return true;
+	if(result_OLED==pdTRUE)
+		return true;
 }
 
 // 接收消息

@@ -458,7 +458,7 @@ esp_err_t Task_MQTT_Message_Handler(void *pvParameters)
         Sensor_Message_t message;
         
         // 从消息队列接收数据（阻塞方式，最多等待100ms）
-        if (Message_Queue_Receive(QUEUE_TYPE_MQTT,&message, pdMS_TO_TICKS(100))) {
+        if (Message_Queue_Receive(Message_Queue_Get_Handle(QUEUE_TYPE_MQTT),&message, pdMS_TO_TICKS(100))) {
             // 只在MQTT连接时处理消息
             if (mqtt_client != NULL && mqtt_connected) {
                 char json_data[400];
@@ -476,7 +476,7 @@ esp_err_t Task_MQTT_Message_Handler(void *pvParameters)
                 }
                 
                 switch (message.Message_Type) {
-                    case MESSAGE_TYPE_HEART_RATE:
+                    case MESSAGE_TYPE_HEART_RATE_SPO2:
                         // 处理心率血氧数据
                         snprintf(json_data, sizeof(json_data),
                                 "{\"id\":\"%d\",\"version\":\"1.0\",\"params\":{"
@@ -486,16 +486,16 @@ esp_err_t Task_MQTT_Message_Handler(void *pvParameters)
                                 "\"heart_rate_warning\":{\"value\":%s,\"time\":%lld}"
                                 "}}",
                                 12346,  // 与原有任务不同的ID
-                                message.Data.Heart_Rate_Data.Heart_Rate, timestamp_ms,
-                                message.Data.Heart_Rate_Data.SpO2, timestamp_ms,
-                                message.Data.Heart_Rate_Data.Baseline, timestamp_ms,
-                                message.Data.Heart_Rate_Data.Warning_Active ? "true" : "false", timestamp_ms);
+                                message.Data.Heart_Rate_SPO2_Data.Heart_Rate, timestamp_ms,
+                                message.Data.Heart_Rate_SPO2_Data.SpO2, timestamp_ms,
+                                message.Data.Heart_Rate_SPO2_Data.Baseline, timestamp_ms,
+                                message.Data.Heart_Rate_SPO2_Data.Warning_Active ? "true" : "false", timestamp_ms);
                         
                         ESP_LOGI(TAG, "📊 处理心率血氧数据 - 心率: %lu, 血氧: %lu, 基准: %lu, 预警: %s",
-                                message.Data.Heart_Rate_Data.Heart_Rate,
-                                message.Data.Heart_Rate_Data.SpO2,
-                                message.Data.Heart_Rate_Data.Baseline,
-                                message.Data.Heart_Rate_Data.Warning_Active ? "是" : "否");
+                                message.Data.Heart_Rate_SPO2_Data.Heart_Rate,
+                                message.Data.Heart_Rate_SPO2_Data.SpO2,
+                                message.Data.Heart_Rate_SPO2_Data.Baseline,
+                                message.Data.Heart_Rate_SPO2_Data.Warning_Active ? "是" : "否");
                         break;
                         
                     case MESSAGE_TYPE_ACCELEROMETER:
