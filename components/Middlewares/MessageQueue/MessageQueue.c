@@ -5,7 +5,8 @@
 static const char *TAG = "MESSAGE_QUEUE";
 
 // 消息队列句柄
-QueueHandle_t Sensor_Message_Queue_TO_OLED = NULL;
+//调试代码注释了
+//QueueHandle_t Sensor_Message_Queue_TO_OLED = NULL;
 QueueHandle_t Sensor_Message_Queue_TO_MQTT = NULL;
 static bool queue_init_error_logged = false;
 static bool queue_not_init_error_logged = false;
@@ -15,9 +16,11 @@ bool Message_Queue_Init(void)
 {
     // 创建消息队列，最多存储10条消息
     Sensor_Message_Queue_TO_MQTT = xQueueCreate(10, sizeof(Sensor_Message_t));
-	Sensor_Message_Queue_TO_OLED = xQueueCreate(10, sizeof(Sensor_Message_t));
+
+	//调试的代码注释了
+	//Sensor_Message_Queue_TO_OLED = xQueueCreate(10, sizeof(Sensor_Message_t));
     
-    if (Sensor_Message_Queue_TO_MQTT == NULL || Sensor_Message_Queue_TO_OLED == NULL) {
+    if (Sensor_Message_Queue_TO_MQTT == NULL) {
         if (!queue_init_error_logged) {
             ESP_LOGE(TAG, "消息队列创建失败");
             queue_init_error_logged = true;
@@ -34,7 +37,7 @@ bool Message_Queue_Init(void)
 // 发送心率血氧数据消息
 bool Message_Queue_Send_Heart_Rate(uint32_t heart_rate, uint32_t spo2, uint32_t baseline, bool warning_active)
 {
-    if (Sensor_Message_Queue_TO_MQTT == NULL || Sensor_Message_Queue_TO_OLED == NULL) {
+    if (Sensor_Message_Queue_TO_MQTT == NULL) {
         if (!queue_not_init_error_logged) {
             ESP_LOGE(TAG, "消息队列未初始化");
             queue_not_init_error_logged = true;
@@ -52,7 +55,8 @@ bool Message_Queue_Send_Heart_Rate(uint32_t heart_rate, uint32_t spo2, uint32_t 
     message.Data.Heart_Rate_SPO2_Data.Warning_Active = warning_active;
     
     BaseType_t result_MQTT = xQueueSend(Sensor_Message_Queue_TO_MQTT, &message, pdMS_TO_TICKS(100));
-    BaseType_t result_OLED = xQueueSend(Sensor_Message_Queue_TO_OLED, &message, pdMS_TO_TICKS(100));
+    //这个调试代码注释了
+	//BaseType_t result_OLED = xQueueSend(Sensor_Message_Queue_TO_OLED, &message, pdMS_TO_TICKS(100));
     
     if (result_MQTT == pdTRUE) {
         // ESP_LOGD(TAG, "心率血氧消息发送成功: HR=%lu, SpO2=%lu, Baseline=%lu, Warning=%d", 
@@ -63,14 +67,15 @@ bool Message_Queue_Send_Heart_Rate(uint32_t heart_rate, uint32_t spo2, uint32_t 
         return false;
     }
 
-	if(result_OLED==pdTRUE)
-		return true;
+	//调试代码注释了
+	// if(result_OLED==pdTRUE)
+	// 	return true;
 }
 
 // 发送加速度计数据消息
 bool Message_Queue_Send_Accelerometer(int16_t ax, int16_t ay, int16_t az)
 {
-    if (Sensor_Message_Queue_TO_OLED == NULL || Sensor_Message_Queue_TO_MQTT == NULL) {
+    if (Sensor_Message_Queue_TO_MQTT == NULL) {
         if (!queue_not_init_error_logged) {
             ESP_LOGE(TAG, "消息队列未初始化");
             queue_not_init_error_logged = true;
@@ -87,7 +92,8 @@ bool Message_Queue_Send_Accelerometer(int16_t ax, int16_t ay, int16_t az)
     message.Data.Accelerometer_Data.Accel_Z = az;
     
     BaseType_t result_MQTT = xQueueSend(Sensor_Message_Queue_TO_MQTT, &message, pdMS_TO_TICKS(100));
-    BaseType_t result_OLED = xQueueSend(Sensor_Message_Queue_TO_OLED, &message, pdMS_TO_TICKS(100));
+    //调试代码注释了
+	//BaseType_t result_OLED = xQueueSend(Sensor_Message_Queue_TO_OLED, &message, pdMS_TO_TICKS(100));
     
     if (result_MQTT == pdTRUE) {
         // ESP_LOGD(TAG, "加速度计消息发送成功: X=%d, Y=%d, Z=%d", ax, ay, az);
@@ -98,14 +104,15 @@ bool Message_Queue_Send_Accelerometer(int16_t ax, int16_t ay, int16_t az)
     }
 
 
-	if(result_OLED==pdTRUE)
-		return true;
+	//调试代码注释了
+	// if(result_OLED==pdTRUE)
+	// 	return true;
 }
 
 // 发送陀螺仪数据消息
 bool Message_Queue_Send_Gyroscope(int16_t gx, int16_t gy, int16_t gz)
 {
-    if (Sensor_Message_Queue_TO_MQTT == NULL || Sensor_Message_Queue_TO_OLED == NULL) {
+    if (Sensor_Message_Queue_TO_MQTT == NULL) {
         ESP_LOGE(TAG, "消息队列未初始化");
         return false;
     }
@@ -119,7 +126,8 @@ bool Message_Queue_Send_Gyroscope(int16_t gx, int16_t gy, int16_t gz)
     message.Data.Gyroscope_Data.Gyro_Z = gz;
     
     BaseType_t result_MQTT = xQueueSend(Sensor_Message_Queue_TO_MQTT, &message, pdMS_TO_TICKS(100));
-    BaseType_t result_OLED = xQueueSend(Sensor_Message_Queue_TO_OLED, &message, pdMS_TO_TICKS(100));
+    //调试代码注释了
+	//BaseType_t result_OLED = xQueueSend(Sensor_Message_Queue_TO_OLED, &message, pdMS_TO_TICKS(100));
     
     if (result_MQTT == pdTRUE) {
         // ESP_LOGD(TAG, "陀螺仪消息发送成功: X=%d, Y=%d, Z=%d", gx, gy, gz);
@@ -129,15 +137,15 @@ bool Message_Queue_Send_Gyroscope(int16_t gx, int16_t gy, int16_t gz)
         return false;
     }
 
-	
-	if(result_OLED==pdTRUE)
-		return true;
+	//调试代码注释了
+	// if(result_OLED==pdTRUE)
+	// 	return true;
 }
 
 // 发送预警消息
 bool Message_Queue_Send_Alert(bool fall_detected, bool convulsion_detected, bool heart_rate_warning)
 {
-    if (Sensor_Message_Queue_TO_MQTT == NULL || Sensor_Message_Queue_TO_OLED == NULL) {
+    if (Sensor_Message_Queue_TO_MQTT == NULL) {
         ESP_LOGE(TAG, "消息队列未初始化");
         return false;
     }
@@ -151,7 +159,8 @@ bool Message_Queue_Send_Alert(bool fall_detected, bool convulsion_detected, bool
     message.Data.Alert_Data.Heart_Rate_Warning = heart_rate_warning;
     
     BaseType_t result_MQTT = xQueueSend(Sensor_Message_Queue_TO_MQTT, &message, pdMS_TO_TICKS(100));
-    BaseType_t result_OLED = xQueueSend(Sensor_Message_Queue_TO_OLED, &message, pdMS_TO_TICKS(100));
+	//这个调试代码注释了
+	//BaseType_t result_OLED = xQueueSend(Sensor_Message_Queue_TO_OLED, &message, pdMS_TO_TICKS(100));
     
     if (result_MQTT == pdTRUE) {
         // ESP_LOGW(TAG, "预警消息发送: 跌倒=%d, 抽搐=%d, 心率预警=%d", 
@@ -162,8 +171,9 @@ bool Message_Queue_Send_Alert(bool fall_detected, bool convulsion_detected, bool
         return false;
     }
 
-	if(result_OLED==pdTRUE)
-		return true;
+	//这个调试代码注释了
+	// if(result_OLED==pdTRUE)
+	// 	return true;
 }
 
 // 接收消息
@@ -183,12 +193,19 @@ bool Message_Queue_Receive(QueueHandle_t queue_handle, Sensor_Message_t *message
 
 QueueHandle_t Message_Queue_Get_Handle(enum QueueType queue_type)
 {
-    if (queue_type == QUEUE_TYPE_MQTT) {
-        return Sensor_Message_Queue_TO_MQTT;
-    } else if (queue_type == QUEUE_TYPE_OLED) {
-        return Sensor_Message_Queue_TO_OLED;
-    } else {
-        ESP_LOGE(TAG, "无效的队列类型: %d", queue_type);
-        return NULL;
-    }
+	//这个调试代码注释了
+    // if (queue_type == QUEUE_TYPE_MQTT) {
+    //     return Sensor_Message_Queue_TO_MQTT;
+    // } else if (queue_type == QUEUE_TYPE_OLED) {
+    //     return Sensor_Message_Queue_TO_OLED;
+    // } else {
+    //     ESP_LOGE(TAG, "无效的队列类型: %d", queue_type);
+    //     return NULL;
+    // }
+	if(queue_type == QUEUE_TYPE_MQTT){
+		return Sensor_Message_Queue_TO_MQTT;
+	}else{
+		ESP_LOGE(TAG, "无效的队列类型: %d", queue_type);
+		return NULL;
+	}
 }

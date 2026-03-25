@@ -11,6 +11,12 @@
 #include "i2c_driver.h"
 #include "MessageQueue.h"
 #include "esp_log.h"
+#include "esp_timer.h"
+#include <time.h>
+#include "esp_wifi.h"
+#include "esp_event.h"
+#include "esp_sntp.h"
+
 
 /*参数宏定义*********************/
 

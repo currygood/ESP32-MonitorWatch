@@ -20,6 +20,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "rtc_driver.h"
+#include <time.h>
 
 static const char *TAG = "OLED";
 
@@ -967,11 +969,6 @@ void Task_OLED_Show(void *pvParameters)
 			
 			// OLED显示初始化界面 - 64x128屏幕适配
 			OLED_Clear();
-			OLED_ShowString(0, 0, "Health Monitor",OLED_6X8);
-			OLED_ShowString(0, 8, "Status: Normal",OLED_6X8);
-			OLED_ShowString(0, 16, "HR:---",OLED_6X8);
-			OLED_ShowString(0, 24, "SpO2:---%",OLED_6X8);
-			OLED_ShowString(0, 32, "Ready",OLED_6X8);
 			OLED_Update();
 		} else {
 			ESP_LOGE("OLED", "OLED初始化失败");
@@ -980,43 +977,99 @@ void Task_OLED_Show(void *pvParameters)
 		ESP_LOGE("OLED", "无法获取I2C总线句柄");
 	}
 	
+	// 初始化RTC模块
+	esp_err_t rtc_ret = Rtc_Init();
+	if (rtc_ret == ESP_OK) {
+		ESP_LOGI("OLED", "RTC初始化成功");
+		
+		// 等待WiFi连接和NTP时间同步完成
+		vTaskDelay(pdMS_TO_TICKS(5000));
+		
+		// 从系统时间获取当前时间（已通过NTP同步）
+		time_t now = time(NULL);
+		if (now > 1000000000LL) {
+			// NTP同步成功，将时间设置到RTC
+			rtc_ret = Rtc_Set_From_Unix((uint32_t)now);
+			if (rtc_ret == ESP_OK) {
+				ESP_LOGI("OLED", "RTC时间设置成功");
+			} else {
+				ESP_LOGE("OLED", "RTC时间设置失败");
+			}
+		} else {
+			ESP_LOGW("OLED", "NTP时间同步未完成，使用默认RTC时间");
+		}
+	} else {
+		ESP_LOGE("OLED", "RTC初始化失败");
+	}
+	
+	
 	while(1)
 	{
-		Sensor_Message_t message;
-		if(Message_Queue_Receive(Message_Queue_Get_Handle(QUEUE_TYPE_OLED),&message, pdMS_TO_TICKS(100))){
-		// 处理消息
-			switch (message.Message_Type) {
-				case MESSAGE_TYPE_HEART_RATE_SPO2:
-					// 处理心率数据
-					OLED_ShowNum(18,16,message.Data.Heart_Rate_SPO2_Data.Heart_Rate,3,OLED_6X8);
-					OLED_ShowNum(30,24,message.Data.Heart_Rate_SPO2_Data.SpO2,3,OLED_6X8);
-					break;
-					
-				case MESSAGE_TYPE_ACCELEROMETER:
-					// 处理加速度计数据
-					OLED_ShowNum(0,40,312,3,OLED_6X8);
-					
-					break;
-					
-				case MESSAGE_TYPE_GYROSCOPE:
-					// 处理陀螺仪数据
-
-					break;
-					
-				case MESSAGE_TYPE_ALERT:
-					// 处理预警消息
-					
-					break;
-					
-				default:
-					ESP_LOGW(TAG, "未知消息类型: %d", message.Message_Type);
-					continue; // 跳过未知消息类型
-			}
-			OLED_Update();
-		}
-
-		// OLED_Update();
+		// debug阶段代码注释了
+		// Sensor_Message_t message;
+		// // 处理消息
+		// if(Message_Queue_Receive(Message_Queue_Get_Handle(QUEUE_TYPE_OLED),&message, pdMS_TO_TICKS(100)))
+		// {
+		// 	switch (message.Message_Type) {
+		// 		case MESSAGE_TYPE_HEART_RATE_SPO2:
+		// 			// 处理心率数据
+		// 			// OLED_ShowNum(18,16,message.Data.Heart_Rate_SPO2_Data.Heart_Rate,3,OLED_6X8);
+		// 			// OLED_ShowNum(30,24,message.Data.Heart_Rate_SPO2_Data.SpO2,3,OLED_6X8);
+		// 			// OLED_Update();
+		// 			break;
+				
+		// 		case MESSAGE_TYPE_ACCELEROMETER:
+		// 			// // 处理加速度计数据
+		// 			// OLED_ShowNum(0,48,312,3,OLED_6X8);
+		// 			// OLED_Update();
+		// 			break;
+				
+		// 		case MESSAGE_TYPE_GYROSCOPE:
+		// 			// 处理陀螺仪数据
+		// 			break;
+				
+		// 		case MESSAGE_TYPE_ALERT:
+		// 			// 处理预警消息
+		// 			break;
+				
+		// 		default:
+		// 			// 跳过未知消息类型
+		// 			break;
+		// 	}
+		// 	OLED_Update();
+		// }
 		
+		// 每秒更新一次时间
+		if (Rtc_Is_Initialized()) {
+			rtc_time_t current_time;
+			if (Rtc_Get_Time(&current_time) == ESP_OK) {
+				uint32_t hours = current_time.hours;
+				uint32_t minutes = current_time.minutes;
+				uint32_t seconds = current_time.seconds;
+				
+				// 清除时间显示区域（中间位置，使用12x24字体）
+				OLED_ClearArea(0, 20, 128, 24);
+				
+				// 使用OLED_F12x24字体在屏幕中间显示时间
+				// 时间格式为 HH:MM:SS，总宽度 = 2*12 + 2*12 + 2*12 = 72像素
+				// 屏幕宽度128像素，居中位置 = (128 - 72) / 2 = 28像素
+				OLED_ShowNum(28, 20, hours, 2, OLED_12X24);
+				OLED_ShowChar(28 + 24, 20, ':', OLED_12X24);
+				OLED_ShowNum(28 + 36, 20, minutes, 2, OLED_12X24);
+				OLED_ShowChar(28 + 60, 20, ':', OLED_12X24);
+				OLED_ShowNum(28 + 72, 20, seconds, 2, OLED_12X24);
+			} else {
+				ESP_LOGE("OLED", "获取RTC时间失败");
+			}
+		}
+		else
+		{
+			OLED_ShowString(0,0,"RTC Uninitialized",OLED_8X16);
+		}
+		
+		OLED_Update();
+
+
 		vTaskDelay(pdMS_TO_TICKS(100));
 	}
 }

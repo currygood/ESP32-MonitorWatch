@@ -33,27 +33,7 @@ extern const ChineseCell_t OLED_CF16x16[];
 
 
 /*图像数据声明*/
-extern const uint8_t Diode[];
-extern const uint8_t Simle[];
-extern const uint8_t Enter_Return[];
-extern const uint8_t Slip_Return[];
-extern const uint8_t Slip_Clock[];
-extern const uint8_t Slip_Mood[];
-extern const uint8_t Unhappy[];
-extern const uint8_t Anxiety[];
-extern const uint8_t Empty[];
-extern const uint8_t Frame[];
-extern const uint8_t Slip_Game[];
-extern const uint8_t Level[];
-extern const uint8_t Big_Anxiety[];
-extern const uint8_t Big_Unhappy[];
-extern const uint8_t Big_Simle[];
-extern const uint8_t Ground[];
-extern const uint8_t Barrier[][48];
-extern const uint8_t Big_Barrier[][64];
-extern const uint8_t Cloud[];
-extern const uint8_t Dino[][48];
-extern const uint8_t Light[];
+extern const unsigned char heart_32x32[256];
 
 /*按照上面的格式，在这个位置加入新的图像数据声明*/
 //...

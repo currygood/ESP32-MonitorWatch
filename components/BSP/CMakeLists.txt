@@ -1,10 +1,12 @@
 set(src_dirs
 	I2C/i2c_driver.c
-	MQTT/mqtt.c)
+	MQTT/mqtt.c
+	RTC/rtc_driver.c)
 
 set(include_dirs
 	I2C
-	MQTT)
+	MQTT
+	RTC)
 
 set(requires
 	Middlewares
