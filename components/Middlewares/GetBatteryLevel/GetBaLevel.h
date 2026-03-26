@@ -67,10 +67,4 @@ uint8_t Battery_Get_Level(void);
  */
 float Battery_Get_Voltage(void);
 
-/**
- * @brief 电池电量监测任务
- * @param pvParameters 任务参数
- */
-void Task_Battery_Monitor(void *pvParameters);
-
 #endif // GET_BATTERY_LEVEL_H
