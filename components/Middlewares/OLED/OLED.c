@@ -1006,6 +1006,9 @@ void Task_OLED_Show(void *pvParameters)
 	// 初始化ADC
 	Battery_Level_Init();
 	
+	float voltage;
+	bool isBeginShowBatteryLevel=false;
+
 	while(1)
 	{
 		// debug阶段代码注释了
@@ -1070,11 +1073,32 @@ void Task_OLED_Show(void *pvParameters)
 			OLED_ShowString(0,0,"RTC Uninitialized",OLED_8X16);
 		}
 
-		float voltage;
-		Battery_Read_Voltage(&voltage);
+		// 每5分钟更新一次电池电量显示
+		static uint32_t lastBatteryUpdate = 0;
+		uint32_t currentTime = xTaskGetTickCount() * portTICK_PERIOD_MS;
+		
+		//第一次就直接显示电池电量
+		if(!isBeginShowBatteryLevel)
+		{
+			Battery_Read_Voltage(&voltage);
 
-		uint8_t batteryLevel = Battery_Calculate_Percentage(voltage);
-		OLED_ShowNum(105,0,batteryLevel,3,OLED_6X8);
+			uint8_t batteryLevel = Battery_Calculate_Percentage(voltage);
+			OLED_ShowNum(105,0,batteryLevel,3,OLED_6X8);
+			
+			lastBatteryUpdate = currentTime;
+			isBeginShowBatteryLevel=true;
+		}
+
+		if (currentTime - lastBatteryUpdate >= 300000) // 5分钟 = 300000ms
+		{
+			
+			Battery_Read_Voltage(&voltage);
+
+			uint8_t batteryLevel = Battery_Calculate_Percentage(voltage);
+			OLED_ShowNum(105,0,batteryLevel,3,OLED_6X8);
+			
+			lastBatteryUpdate = currentTime;
+		}
 
 
 		// 更新到OLED硬件
