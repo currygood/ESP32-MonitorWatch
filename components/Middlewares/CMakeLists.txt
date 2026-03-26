@@ -3,13 +3,15 @@ set(src_dirs
 	OLED/OLED.c
 	OLED/OLED_Data.c
 	MPU6050/MPU6050.c
-	MessageQueue/MessageQueue.c)
+	MessageQueue/MessageQueue.c
+	GetBatteryLevel/GetBaLevel.c)
 
 set(include_dirs
 	OLED
     MAX30102
     MPU6050
-	MessageQueue)
+	MessageQueue
+	GetBatteryLevel)
 
 set(requires
     driver
@@ -18,7 +20,7 @@ set(requires
 idf_component_register(SRCS "${src_dirs}"
                        INCLUDE_DIRS "${include_dirs}"
                        REQUIRES ${requires}
-					   REQUIRES esp_timer driver)
+					   REQUIRES esp_adc esp_timer driver)
 
 component_compile_options(-ffast-math -O3 -Wno-format)
 add_compile_options(-fdiagnostics-color=always)

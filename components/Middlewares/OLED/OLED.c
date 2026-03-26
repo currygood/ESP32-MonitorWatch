@@ -22,6 +22,7 @@
 #include "esp_log.h"
 #include "rtc_driver.h"
 #include <time.h>
+#include "GetBaLevel.h"
 
 static const char *TAG = "OLED";
 
@@ -1002,6 +1003,8 @@ void Task_OLED_Show(void *pvParameters)
 		ESP_LOGE("OLED", "RTC初始化失败");
 	}
 	
+	// 初始化ADC
+	Battery_Level_Init();
 	
 	while(1)
 	{
@@ -1066,9 +1069,16 @@ void Task_OLED_Show(void *pvParameters)
 		{
 			OLED_ShowString(0,0,"RTC Uninitialized",OLED_8X16);
 		}
-		
-		OLED_Update();
 
+		float voltage;
+		Battery_Read_Voltage(&voltage);
+
+		uint8_t batteryLevel = Battery_Calculate_Percentage(voltage);
+		OLED_ShowNum(105,0,batteryLevel,3,OLED_6X8);
+
+
+		// 更新到OLED硬件
+		OLED_Update();
 
 		vTaskDelay(pdMS_TO_TICKS(100));
 	}
