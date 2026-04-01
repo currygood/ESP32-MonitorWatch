@@ -365,7 +365,7 @@ esp_err_t MQTT_Publish(const char *topic, const char *data, int len)
 }
 
 // MQTT消息处理任务
-esp_err_t Task_MQTT_Message_Handler(void *pvParameters)
+void Task_MQTT_Message_Handler(void *pvParameters)
 {
     ESP_LOGW(TAG, ">>> MQTT消息处理任务启动");
     
@@ -393,7 +393,7 @@ esp_err_t Task_MQTT_Message_Handler(void *pvParameters)
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "WiFi 初始化失败，已在 Wifi_Init 内处理重启");
         vTaskDelete(NULL);
-        return ESP_FAIL;
+        return;
     }
     ESP_LOGI(TAG, "WiFi 连接成功！");
 
@@ -432,7 +432,7 @@ esp_err_t Task_MQTT_Message_Handler(void *pvParameters)
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "MQTT 启动失败，错误码: %s", esp_err_to_name(ret));
         vTaskDelete(NULL);
-        return ESP_FAIL;
+        return;
     } else {
         ESP_LOGI(TAG, "MQTT 已启动");
     }

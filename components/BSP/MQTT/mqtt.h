@@ -48,6 +48,6 @@ void generate_sensor_data(sensor_data_t *data);
 
 
 // MQTT消息处理任务函数
-esp_err_t Task_MQTT_Message_Handler(void *pvParameters);
+void Task_MQTT_Message_Handler(void *pvParameters);
 
 #endif
