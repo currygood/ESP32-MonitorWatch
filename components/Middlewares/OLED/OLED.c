@@ -957,153 +957,88 @@ void OLED_DrawArc(int16_t X, int16_t Y, uint8_t Radius, int16_t StartAngle, int1
 /*********************功能函数*/
 
 // OLED显示任务
+// 修改后的 OLED 显示任务
 void Task_OLED_Show(void *pvParameters)
 {
-	// 等待各种硬件初始化完成
-	vTaskDelay(pdMS_TO_TICKS(1000));
-
-	// 获取I2C总线句柄并初始化OLED
+	// 1. 基础硬件初始化 (尽快完成)
 	i2c_master_bus_handle_t i2c_bus = I2c_Get_Global_Bus_Handle();
 	if (i2c_bus != NULL) {
 		if (OLED_Init(i2c_bus) == ESP_OK) {
 			ESP_LOGI("OLED", "OLED初始化成功");
-			
-			// OLED显示初始化界面 - 64x128屏幕适配
 			OLED_Clear();
 			OLED_Update();
 		} else {
 			ESP_LOGE("OLED", "OLED初始化失败");
 		}
-	} else {
-		ESP_LOGE("OLED", "无法获取I2C总线句柄");
 	}
-	
-	// 初始化RTC模块
+
+	// 2. RTC 和 电量模块初始化
 	esp_err_t rtc_ret = Rtc_Init();
-	if (rtc_ret == ESP_OK) {
-		ESP_LOGI("OLED", "RTC初始化成功");
-		
-		// 等待WiFi连接和NTP时间同步完成
-		vTaskDelay(pdMS_TO_TICKS(5000));
-		
-		// 从系统时间获取当前时间（已通过NTP同步）
-		time_t now = time(NULL);
-		if (now > 1000000000LL) {
-			// NTP同步成功，将时间设置到RTC
-			rtc_ret = Rtc_Set_From_Unix((uint32_t)now);
-			if (rtc_ret == ESP_OK) {
-				ESP_LOGI("OLED", "RTC时间设置成功");
-			} else {
-				ESP_LOGE("OLED", "RTC时间设置失败");
-			}
-		} else {
-			ESP_LOGW("OLED", "NTP时间同步未完成，使用默认RTC时间");
-		}
-	} else {
-		ESP_LOGE("OLED", "RTC初始化失败");
-	}
-	
-	// 初始化ADC
 	Battery_Level_Init();
-	
+
+	// 3. 状态变量
 	float voltage;
-	bool isBeginShowBatteryLevel=false;
+	bool isTimeSynced = false;          // 标记是否已经完成了系统时间->RTC的同步
+	bool isBeginShowBatteryLevel = false;
+	static uint32_t lastBatteryUpdate = 0;
+
+	ESP_LOGI("OLED", "进入UI刷新循环...");
 
 	while(1)
 	{
-		// debug阶段代码注释了
-		// Sensor_Message_t message;
-		// // 处理消息
-		// if(Message_Queue_Receive(Message_Queue_Get_Handle(QUEUE_TYPE_OLED),&message, pdMS_TO_TICKS(100)))
-		// {
-		// 	switch (message.Message_Type) {
-		// 		case MESSAGE_TYPE_HEART_RATE_SPO2:
-		// 			// 处理心率数据
-		// 			// OLED_ShowNum(18,16,message.Data.Heart_Rate_SPO2_Data.Heart_Rate,3,OLED_6X8);
-		// 			// OLED_ShowNum(30,24,message.Data.Heart_Rate_SPO2_Data.SpO2,3,OLED_6X8);
-		// 			// OLED_Update();
-		// 			break;
-				
-		// 		case MESSAGE_TYPE_ACCELEROMETER:
-		// 			// // 处理加速度计数据
-		// 			// OLED_ShowNum(0,48,312,3,OLED_6X8);
-		// 			// OLED_Update();
-		// 			break;
-				
-		// 		case MESSAGE_TYPE_GYROSCOPE:
-		// 			// 处理陀螺仪数据
-		// 			break;
-				
-		// 		case MESSAGE_TYPE_ALERT:
-		// 			// 处理预警消息
-		// 			break;
-				
-		// 		default:
-		// 			// 跳过未知消息类型
-		// 			break;
-		// 	}
-		// 	OLED_Update();
-		// }
+		// --- A. 时间对时逻辑 (关键：不再阻塞，在循环内异步检测) ---
+		if (!isTimeSynced) {
+			time_t now = time(NULL);
+			// 如果时间戳大于 2024年 (1704067200)，说明 NTP 已成功同步，或者配网超时使用了默认时间
+			if (now > 1704067200LL) {
+				if (Rtc_Set_From_Unix((uint32_t)now) == ESP_OK) {
+					isTimeSynced = true; // 标记对时成功，后续不再执行此对时逻辑
+					ESP_LOGW("OLED", "检测到系统时间就绪，已同步至硬件RTC");
+				}
+			}
+		}
+
+		// --- B. 屏幕内容绘制 ---
 		
-		// 每秒更新一次时间
+		// 1. 绘制时间
 		if (Rtc_Is_Initialized()) {
 			rtc_time_t current_time;
 			if (Rtc_Get_Time(&current_time) == ESP_OK) {
-				uint32_t hours = current_time.hours;
-				uint32_t minutes = current_time.minutes;
-				uint32_t seconds = current_time.seconds;
-				
-				// 清除时间显示区域（中间位置，使用12x24字体）
+				// 清除时间区域并绘制（居中显示）
 				OLED_ClearArea(0, 20, 128, 24);
-				
-				// 使用OLED_F12x24字体在屏幕中间显示时间
-				// 时间格式为 HH:MM:SS，总宽度 = 2*12 + 2*12 + 2*12 = 72像素
-				// 屏幕宽度128像素，居中位置 = (128 - 72) / 2 = 28像素
-				OLED_ShowNum(28, 20, hours, 2, OLED_12X24);
-				OLED_ShowChar(28 + 24, 20, ':', OLED_12X24);
-				OLED_ShowNum(28 + 36, 20, minutes, 2, OLED_12X24);
-				OLED_ShowChar(28 + 60, 20, ':', OLED_12X24);
-				OLED_ShowNum(28 + 72, 20, seconds, 2, OLED_12X24);
-			} else {
-				ESP_LOGE("OLED", "获取RTC时间失败");
+				// 格式 HH:MM:SS (12x24 字体)
+				OLED_ShowNum(16, 20, current_time.hours, 2, OLED_12X24);
+				OLED_ShowChar(40, 20, ':', OLED_12X24);
+				OLED_ShowNum(52, 20, current_time.minutes, 2, OLED_12X24);
+				OLED_ShowChar(76, 20, ':', OLED_12X24);
+				OLED_ShowNum(88, 20, current_time.seconds, 2, OLED_12X24);
 			}
-		}
-		else
-		{
-			OLED_ShowString(0,0,"RTC Uninitialized",OLED_8X16);
+		} else {
+			OLED_ShowString(0, 20, "RTC Waiting...", OLED_8X16);
 		}
 
-		// 每5分钟更新一次电池电量显示
-		static uint32_t lastBatteryUpdate = 0;
+		// 2. 绘制电池电量
 		uint32_t currentTime = xTaskGetTickCount() * portTICK_PERIOD_MS;
-		
-		//第一次就直接显示电池电量
-		if(!isBeginShowBatteryLevel)
-		{
+		if (!isBeginShowBatteryLevel || (currentTime - lastBatteryUpdate >= 300000)) {
 			Battery_Read_Voltage(&voltage);
-
 			uint8_t batteryLevel = Battery_Calculate_Percentage(voltage);
-			OLED_ShowNum(105,0,batteryLevel,3,OLED_6X8);
+			OLED_ClearArea(105, 0, 24, 8); // 清除电量区域
+			OLED_ShowNum(105, 0, batteryLevel, 3, OLED_6X8);
 			
 			lastBatteryUpdate = currentTime;
-			isBeginShowBatteryLevel=true;
+			isBeginShowBatteryLevel = true;
 		}
 
-		if (currentTime - lastBatteryUpdate >= 300000) // 5分钟 = 300000ms
-		{
-			
-			Battery_Read_Voltage(&voltage);
-
-			uint8_t batteryLevel = Battery_Calculate_Percentage(voltage);
-			OLED_ShowNum(105,0,batteryLevel,3,OLED_6X8);
-			
-			lastBatteryUpdate = currentTime;
+		// 3. 绘制状态指示 (可选: 提示正在配网)
+		if (!isTimeSynced) {
+			OLED_ShowString(0, 0, "WiFi Config...", OLED_6X8);
+		} else {
+			OLED_ClearArea(0, 0, 80, 8); // 对时成功后清除配网提示
+			OLED_ShowString(0, 0, "Online", OLED_6X8);
 		}
 
-
-		// 更新到OLED硬件
+		// --- C. 更新显示并休眠 ---
 		OLED_Update();
-
-		vTaskDelay(pdMS_TO_TICKS(100));
+		vTaskDelay(pdMS_TO_TICKS(200)); // 适当降低频率减少闪烁，200ms对秒表显示足够
 	}
 }
