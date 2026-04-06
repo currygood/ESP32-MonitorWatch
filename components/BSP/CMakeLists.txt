@@ -15,5 +15,5 @@ set(requires
 idf_component_register(SRCS "${src_dirs}"
 					   INCLUDE_DIRS "${include_dirs}"
 					   REQUIRES "${requires}"
-					   REQUIRES driver esp_wifi esp_netif esp_event nvs_flash mqtt)
+					   REQUIRES driver esp_wifi esp_netif esp_event nvs_flash mqtt wifi_provisioning bt protocomm json)
 component_compile_options(-ffast-math -O3 -Wno-error=format=-Wno-format)
