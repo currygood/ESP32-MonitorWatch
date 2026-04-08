@@ -27,16 +27,16 @@
 // ============================================================
 #define DEFAULT_WIFI_SSID       "RedmiK70"
 #define DEFAULT_WIFI_PASS       "88888888"
-#define DEFAULT_MQTT_USERNAME   "6wam422raC"
-#define DEFAULT_MQTT_PASSWORD   "version=2018-10-31&res=products%2F6wam422raC%2Fdevices%2FESP32&et=2082844800&method=md5&sign=IgVnG5HERafYrquMPe9D7Q%3D%3D"
+#define DEFAULT_MQTT_USERNAME   "1nF1D22kt0"
+#define DEFAULT_MQTT_PASSWORD   "version=2018-10-31&res=products%2F1nF1D22kt0%2Fdevices%2FMyTest&et=2091187496&method=md5&sign=VuvjYUj0KPTQ4e8zOJeyOw%3D%3D"
 
 // ============================================================
 // MQTT Broker 固定配置（与账号无关，不存入 NVS）
 // ============================================================
 #define MQTT_HOST               "mqtts.heclouds.com"
 #define MQTT_PORT               1883
-#define MQTT_CLIENT_ID          "ESP32"
-#define SENSOR_REPORT_TOPIC     "$sys/6wam422raC/ESP32/thing/property/post"
+#define MQTT_CLIENT_ID          "MyTest"    // 可自定义，通常与设备 ID 相关
+#define SENSOR_REPORT_TOPIC     "$sys/1nF1D22kt0/MyTest/thing/property/post"
 
 // ============================================================
 // NVS 存储配置

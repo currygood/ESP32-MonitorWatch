@@ -76,37 +76,85 @@ esp_err_t Mpu6050_Read_Raw(int16_t *ax, int16_t *ay, int16_t *az,
     return ESP_OK;
 }
 
-// 检测函数
+// // 检测函数
+// bool Mpu6050_Detect_Fall_Or_Convulsion(int16_t *ax_buf, int16_t *ay_buf, int16_t *az_buf, int len) {
+//     if (len < 10) return false;
+
+//     float max_mag = 0;
+//     float avg_mag = 0;
+//     int fall_count = 0;
+
+//     for (int i = 0; i < len; i++) {
+
+//         float mag = sqrtf((float)ax_buf[i]*ax_buf[i] +
+//                           (float)ay_buf[i]*ay_buf[i] +
+//                           (float)az_buf[i]*az_buf[i]) / 2048.0f;   // ±16g
+
+//         avg_mag += mag;
+
+//         if (mag > max_mag)
+//             max_mag = mag;
+
+//         if (mag > 2.0f)
+//             fall_count++;
+//     }
+
+//     avg_mag /= len;
+
+//     if (max_mag > 2.2f && avg_mag > 1.05f) {
+//         ESP_LOGW(TAG, "可能跌倒或剧烈抽搐! max=%.2f g avg=%.2f g", max_mag, avg_mag);
+//         return true;
+//     }
+
+//     return false;
+// }
+
+// 检测函数（改进版，增加了高频震动检测，更适合抽搐识别）
+// 定义全局变量
+static bool s_current_is_abnormal = false; 
+
 bool Mpu6050_Detect_Fall_Or_Convulsion(int16_t *ax_buf, int16_t *ay_buf, int16_t *az_buf, int len) {
     if (len < 10) return false;
 
+    // --- 每次进入检测时，先初始化为 false ---
+    // 这样如果这 4 秒没出事，s_current_is_abnormal 就会变回 false
+    s_current_is_abnormal = false; 
+
     float max_mag = 0;
-    float avg_mag = 0;
-    int fall_count = 0;
+    float total_variation = 0;
+    int high_peak_count = 0;
+    float last_mag = 1.0f;
 
     for (int i = 0; i < len; i++) {
-
-        float mag = sqrtf((float)ax_buf[i]*ax_buf[i] +
-                          (float)ay_buf[i]*ay_buf[i] +
-                          (float)az_buf[i]*az_buf[i]) / 2048.0f;   // ±16g
-
-        avg_mag += mag;
-
-        if (mag > max_mag)
-            max_mag = mag;
-
-        if (mag > 2.0f)
-            fall_count++;
+        float mag = sqrtf((float)ax_buf[i]*ax_buf[i] + (float)ay_buf[i]*ay_buf[i] + (float)az_buf[i]*az_buf[i]) / 2048.0f;
+        if (mag > max_mag) max_mag = mag;
+        total_variation += fabsf(mag - last_mag);
+        if (mag > 1.8f) high_peak_count++;
+        last_mag = mag;
     }
 
-    avg_mag /= len;
+    float activity_score = total_variation / len;
 
-    if (max_mag > 2.2f && avg_mag > 1.05f) {
-        ESP_LOGW(TAG, "可能跌倒或剧烈抽搐! max=%.2f g avg=%.2f g", max_mag, avg_mag);
+    // A. 跌倒检测
+    if (max_mag > 2.0f && activity_score > 0.15f) {
+        ESP_LOGW(TAG, "🔔 撞击报警!");
+        s_current_is_abnormal = true; 
+        return true;
+    }
+
+    // B. 抽搐检测
+    if (activity_score > 0.25f || (high_peak_count > 8 && activity_score > 0.2f)) {
+        ESP_LOGW(TAG, "🚨 抽搐报警!");
+        s_current_is_abnormal = true;
         return true;
     }
 
     return false;
+}
+
+// 获取当前的异常状态
+bool Get_isFall(void) {
+    return s_current_is_abnormal;
 }
 
 // --- 标志位管理函数 ---
@@ -174,8 +222,8 @@ void Task_Mpu6050_Monitor(void *pvParameters) {
             Mpu6050_Last_Gyro_Z = gz;
             
             // 通过消息队列发送加速度和陀螺仪数据
-            Message_Queue_Send_Accelerometer(ax, ay, az);
-            Message_Queue_Send_Gyroscope(gx, gy, gz);
+            // Message_Queue_Send_Accelerometer(ax, ay, az);
+            // Message_Queue_Send_Gyroscope(gx, gy, gz);
             
             // 设置数据就绪标志（保持向后兼容性）
             Mpu6050_Data_Ready_Flag = true;
