@@ -27,7 +27,7 @@
 #define MPU6050_REG_ACCEL_XOUT_H 0x3B
 
 // 算法宏
-#define MPU6050_BUFFER_SIZE      200
+#define MPU6050_BUFFER_SIZE      110
 #define MPU6050_SAMPLES_PER_SEC  50
 
 // --- API 声明 ---
@@ -40,6 +40,7 @@ esp_err_t Mpu6050_Read_Raw(int16_t *ax, int16_t *ay, int16_t *az,
 
 // 检测摔倒或 convulsion	
 bool Mpu6050_Detect_Fall_Or_Convulsion(int16_t *ax_buf, int16_t *ay_buf, int16_t *az_buf, int len);
+bool Get_isFall(void);
 
 // --- 标志位管理函数 ---
 bool Mpu6050_Can_Read(void);

@@ -1,4 +1,5 @@
 #include "mqtt.h"
+#include "MPU6050.h"
 
 static const char *TAG = "MQTT";
 
@@ -645,6 +646,32 @@ void generate_sensor_data(sensor_data_t *data)
     data->timestamp = (int)time(NULL);
 }
 
+// =============================================================
+// 风险等级计算逻辑（根据心率和血氧计算，是否检测到异常运动计算）
+// =============================================================
+int Calculate_Risk_Level(uint32_t hr, uint32_t spo2, bool abnormal_motion_detected) {
+    int risk = 0;
+
+	if(abnormal_motion_detected)
+	{
+		risk+=10;
+	}
+
+    // 心率异常判断
+    if (hr > 100 || hr < 50)       risk += 40;
+    else if (hr > 90 || hr < 60)   risk += 20;
+    
+    // 血氧异常判断
+    if (spo2 < 95)      risk += 30;
+    else if (spo2 < 97) risk += 15;
+    
+    // 基础随机扰动（模拟真实感）
+    risk += rand() % 10;
+    
+    if (risk > 100) risk = 100;
+    return risk;
+}
+
 // ============================================================
 // ⑩  Task_MQTT_Message_Handler（main.c 通过 xTaskCreate 调用）
 // ============================================================
@@ -663,6 +690,10 @@ void Task_MQTT_Message_Handler(void *pvParameters)
     ESP_ERROR_CHECK(ret);
     ESP_LOGI(TAG, "NVS 初始化完成");
 
+	// // 清除所有 MQTT 凭据
+	// //debug阶段，每次都要清除，方便测试
+	// NVS_Clear_All_Credentials();
+
     // ---------- WiFi 连接（含 BLE 配网逻辑）----------
     ret = Wifi_Init();
     if (ret != ESP_OK) {
@@ -672,6 +703,8 @@ void Task_MQTT_Message_Handler(void *pvParameters)
         return;
     }
     ESP_LOGW(TAG, "WiFi 连接成功！");
+
+	
 
     // ---------- 等待网络稳定（手机热点 NAT 需要时间）----------
     vTaskDelay(pdMS_TO_TICKS(3000));
@@ -717,13 +750,6 @@ void Task_MQTT_Message_Handler(void *pvParameters)
     ESP_LOGW(TAG, "✅ 初始化完成，开始处理消息队列...");
 
     // ---------- 主循环：从消息队列取数据并上报 ----------
-    static const char json_template[] =
-        "{\"id\":\"%d\",\"version\":\"1.0\",\"params\":{"
-        "\"heart_rate\":{\"value\":%lu,\"time\":%lld},"
-        "\"oxygen_saturation\":{\"value\":%lu,\"time\":%lld},"
-        "\"heart_rate_baseline\":{\"value\":%lu,\"time\":%lld},"
-        "\"heart_rate_warning\":{\"value\":%s,\"time\":%lld}"
-        "}}";
 
     while (1) {
         Sensor_Message_t message;
@@ -752,16 +778,30 @@ void Task_MQTT_Message_Handler(void *pvParameters)
         }
 
         char json_data[512] = {0};
-
+		char time_str[64] = {0};
+		snprintf(time_str, sizeof(time_str), ",\"time\":%lld", ts_ms);
+		
         switch (message.Message_Type) {
 
             case MESSAGE_TYPE_HEART_RATE_SPO2:
-                snprintf(json_data, sizeof(json_data), json_template,
-                         12346,
-                         message.Data.Heart_Rate_SPO2_Data.Heart_Rate,    ts_ms,
-                         message.Data.Heart_Rate_SPO2_Data.SpO2,          ts_ms,
-                         message.Data.Heart_Rate_SPO2_Data.Baseline,      ts_ms,
-                         message.Data.Heart_Rate_SPO2_Data.Warning_Active ? "true" : "false", ts_ms);
+                 int current_risk = Calculate_Risk_Level(
+                    message.Data.Heart_Rate_SPO2_Data.Heart_Rate, 
+                    message.Data.Heart_Rate_SPO2_Data.SpO2,
+                    Get_isFall());
+
+
+
+                snprintf(json_data, sizeof(json_data), 
+                        "{\"id\":\"%d\",\"version\":\"1.0\",\"params\":{"
+                        "\"heart_rate\":{\"value\":%lu %s},"
+                        "\"oxygen_saturation\":{\"value\":%lu %s},"
+                        "\"seizure_risk_level\":{\"value\":%d %s}" 
+                        "}}",
+                        rand() % 1000,
+                        message.Data.Heart_Rate_SPO2_Data.Heart_Rate, time_str,
+                        message.Data.Heart_Rate_SPO2_Data.SpO2, time_str,
+                        current_risk, time_str); // 发送计算出的风险等级
+
                 ESP_LOGI(TAG, "📊 心率血氧 HR:%lu SpO2:%lu Base:%lu Warn:%s",
                          message.Data.Heart_Rate_SPO2_Data.Heart_Rate,
                          message.Data.Heart_Rate_SPO2_Data.SpO2,
@@ -796,13 +836,11 @@ void Task_MQTT_Message_Handler(void *pvParameters)
             case MESSAGE_TYPE_ALERT:
                 snprintf(json_data, sizeof(json_data),
                          "{\"id\":\"%d\",\"version\":\"1.0\",\"params\":{"
-                         "\"fall_detected\":{\"value\":%s,\"time\":%lld},"
-                         "\"convulsion_detected\":{\"value\":%s,\"time\":%lld},"
-                         "\"heart_rate_warning\":{\"value\":%s,\"time\":%lld}}}",
-                         12349,
-                         message.Data.Alert_Data.Fall_Detected        ? "true" : "false", ts_ms,
-                         message.Data.Alert_Data.Convulsion_Detected  ? "true" : "false", ts_ms,
-                         message.Data.Alert_Data.Heart_Rate_Warning   ? "true" : "false", ts_ms);
+                         "\"abnormal_motion_detected\":{\"value\":%s %s}"
+                         "}}",
+                         rand() % 10000,
+                         (message.Data.Alert_Data.Fall_Detected || message.Data.Alert_Data.Convulsion_Detected) ? "true" : "false",
+                         time_str);
                 ESP_LOGW(TAG, "🚨 预警 跌倒:%s 抽搐:%s 心率:%s",
                          message.Data.Alert_Data.Fall_Detected       ? "Y" : "N",
                          message.Data.Alert_Data.Convulsion_Detected ? "Y" : "N",
