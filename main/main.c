@@ -12,6 +12,7 @@
 #include "MPU6050.h"
 #include "MessageQueue.h"
 #include "mqtt.h"
+#include "Key.h"
 
 
 void app_main(void) 
@@ -29,8 +30,11 @@ void app_main(void)
 	if (!Message_Queue_Init()) {
 		ESP_LOGE("TASK_SENSOR", "消息队列初始化失败");
 	}
+	
+	//初始化KEY
+	Key_Init(NULL);
 
-	vTaskDelay(pdMS_TO_TICKS(500)); 	//等待500ms，确保I2C总线和MessageQueue初始化完成
+	vTaskDelay(pdMS_TO_TICKS(500)); 	//等待500ms，确保I2C总线和MessageQueue等设备初始化完成
 
 	// 创建任务
 	xTaskCreate(Task_Max30102_Monitor, "Task_Max30102_Monitor", 4096, NULL, 3, NULL);

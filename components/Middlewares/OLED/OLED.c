@@ -23,6 +23,7 @@
 #include "rtc_driver.h"
 #include <time.h>
 #include "GetBaLevel.h"
+#include "Key.h"
 
 static const char *TAG = "OLED";
 
@@ -983,7 +984,7 @@ void Task_OLED_Show(void *pvParameters)
 	static uint32_t lastBatteryUpdate = 0;
 
 	ESP_LOGI("OLED", "进入UI刷新循环...");
-
+	
 	while(1)
 	{
 		// --- A. 时间对时逻辑 (关键：不再阻塞，在循环内异步检测) ---
