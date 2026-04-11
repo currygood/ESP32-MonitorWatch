@@ -46,9 +46,6 @@ void app_main(void)
 	// RTC初始化
 	esp_err_t rtc_ret = Rtc_Init();
 
-	//初始化KEY
-	Key_Init(NULL);
-
 	//获取电池电量初始化
 	Battery_Level_Init();
 
@@ -58,7 +55,7 @@ void app_main(void)
 	xTaskCreate(Task_Max30102_Monitor, "Task_Max30102_Monitor", 4096, NULL, 3, NULL);
 	xTaskCreate(Task_Mpu6050_Monitor, "Task_Mpu6050_Monitor", 4096, NULL, 3, NULL);
 	xTaskCreate(Task_MQTT_Message_Handler,"Task_MQTT_Message_Handler",10240 ,NULL,3,NULL);
-	xTaskCreate(Task_OLED_Show,"Task_OLED_Show",4096 ,NULL,2,NULL);
+	xTaskCreate(Task_OLED_Show,"Task_OLED_Show",8192 ,NULL,2,NULL);
 
 	// 短暂延迟确保任务启动，然后让app_main自然结束
     vTaskDelay(pdMS_TO_TICKS(100));

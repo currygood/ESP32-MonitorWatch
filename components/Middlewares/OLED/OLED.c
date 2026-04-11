@@ -23,7 +23,6 @@
 #include "rtc_driver.h"
 #include <time.h>
 #include "GetBaLevel.h"
-#include "Key.h"
 
 static const char *TAG = "OLED";
 
@@ -961,6 +960,7 @@ void OLED_DrawArc(int16_t X, int16_t Y, uint8_t Radius, int16_t StartAngle, int1
 // 修改后的 OLED 显示任务
 void Task_OLED_Show(void *pvParameters)
 {
+	// 1. 基础硬件初始化 (尽快完成)
 	// 1. 基础硬件初始化 (尽快完成)
 	i2c_master_bus_handle_t i2c_bus = I2c_Get_Global_Bus_Handle();
 	if (i2c_bus != NULL) {
