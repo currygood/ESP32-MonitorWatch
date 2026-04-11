@@ -679,16 +679,7 @@ int Calculate_Risk_Level(uint32_t hr, uint32_t spo2, bool abnormal_motion_detect
 void Task_MQTT_Message_Handler(void *pvParameters)
 {
     ESP_LOGW(TAG, ">>> MQTT 消息处理任务启动");
-
-    // ---------- NVS 初始化 ----------
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_LOGW(TAG, "NVS 需要清理，重新初始化...");
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
-    ESP_LOGI(TAG, "NVS 初始化完成");
+	esp_err_t ret;
 
 	// // 清除所有 MQTT 凭据
 	// //debug阶段，每次都要清除，方便测试
@@ -703,8 +694,6 @@ void Task_MQTT_Message_Handler(void *pvParameters)
         return;
     }
     ESP_LOGW(TAG, "WiFi 连接成功！");
-
-	
 
     // ---------- 等待网络稳定（手机热点 NAT 需要时间）----------
     vTaskDelay(pdMS_TO_TICKS(3000));

@@ -973,11 +973,7 @@ void Task_OLED_Show(void *pvParameters)
 		}
 	}
 
-	// 2. RTC 和 电量模块初始化
-	esp_err_t rtc_ret = Rtc_Init();
-	Battery_Level_Init();
-
-	// 3. 状态变量
+	// 状态变量
 	float voltage;
 	bool isTimeSynced = false;          // 标记是否已经完成了系统时间->RTC的同步
 	bool isBeginShowBatteryLevel = false;

@@ -74,11 +74,6 @@ void Key_Init(key_callback_t cb)
         }
     }
 
-    esp_err_t ret = gpio_install_isr_service(0);
-    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
-        ESP_ERROR_CHECK(ret);
-    }
-
     for (int i = 0; i < KEY_NUM; i++) {
         ESP_ERROR_CHECK(
             gpio_isr_handler_add(s_keys[i].gpio, key_isr_handler, (void *)&s_keys[i])
