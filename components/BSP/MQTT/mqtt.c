@@ -1,5 +1,6 @@
 #include "mqtt.h"
 #include "MPU6050.h"
+#include "max30102.h"
 
 static const char *TAG = "MQTT";
 
@@ -8,7 +9,6 @@ static const char *TAG = "MQTT";
 // ============================================================
 static EventGroupHandle_t    wifi_event_group      = NULL;
 static esp_mqtt_client_handle_t mqtt_client        = NULL;
-static TaskHandle_t          sensor_task_handle    = NULL;
 
 static bool  mqtt_connected       = false;
 static int   mqtt_error_count     = 0;
@@ -648,28 +648,67 @@ void generate_sensor_data(sensor_data_t *data)
 
 // =============================================================
 // 风险等级计算逻辑（根据心率和血氧计算，是否检测到异常运动计算）
+// 通过前3次计算风险等级
 // =============================================================
+uint8_t Risk_Last[3] = {0};
+uint8_t Risk_Count=0;
+float HeartRate_Last[3] = {0};
+uint8_t OxygenSaturationCount_Last[3] = {0};
+
 int Calculate_Risk_Level(uint32_t hr, uint32_t spo2, bool abnormal_motion_detected) {
-    int risk = 0;
+    int riskAll = 0;	//四次连起来的风险
+	int risk = 0;	//此次风险
+	HeartRate_Last[Risk_Count] = (float)hr;
+	OxygenSaturationCount_Last[Risk_Count] = spo2;
+	Risk_Last[Risk_Count] = risk;
+	Risk_Count++;
 
 	if(abnormal_motion_detected)
 	{
-		risk+=10;
+		risk+=20;
 	}
 
-    // 心率异常判断
-    if (hr > 100 || hr < 50)       risk += 40;
-    else if (hr > 90 || hr < 60)   risk += 20;
-    
-    // 血氧异常判断
-    if (spo2 < 95)      risk += 30;
-    else if (spo2 < 97) risk += 15;
-    
-    // 基础随机扰动（模拟真实感）
-    risk += rand() % 10;
-    
-    if (risk > 100) risk = 100;
-    return risk;
+	if(Risk_Count==3)
+	{
+		// 连续的心率超过基准值20bpm
+		if(hr-Max30102_Get_Heart_Rate_Baseline()>20)
+		{
+			risk+=35;
+			if(HeartRate_Last[2]-Max30102_Get_Heart_Rate_Baseline()>20)
+			{
+				risk+=20;
+				if(HeartRate_Last[1]-Max30102_Get_Heart_Rate_Baseline()>20)
+				{
+					risk+=15;
+					if(HeartRate_Last[0]-Max30102_Get_Heart_Rate_Baseline()>20)
+						risk+=0;
+				}
+					
+			}
+		}
+		
+		if(hr<20+Max30102_Get_Heart_Rate_Baseline())
+		{
+			risk+=35;
+			if(HeartRate_Last[2]<20+Max30102_Get_Heart_Rate_Baseline())
+			{
+				risk+=25;
+				if(HeartRate_Last[1]<20+Max30102_Get_Heart_Rate_Baseline())
+				{
+					risk+=15;
+					if(HeartRate_Last[0]<20+Max30102_Get_Heart_Rate_Baseline())
+						risk+=5;
+				}
+					
+			}
+		}
+		
+		riskAll = (int)((float)risk*0.4f+(float)Risk_Last[0]*0.3f+(float)Risk_Last[1]*0.2f+(float)Risk_Last[2]*0.1f);
+		Risk_Count = 0;
+		return riskAll;
+	}
+
+	return 5;
 }
 
 // ============================================================
@@ -682,7 +721,7 @@ void Task_MQTT_Message_Handler(void *pvParameters)
 	esp_err_t ret;
 
 	// // 清除所有 MQTT 凭据
-	// //debug阶段，每次都要清除，方便测试
+	// //debug阶段，方便测试
 	// NVS_Clear_All_Credentials();
 
     // ---------- WiFi 连接（含 BLE 配网逻辑）----------
@@ -693,13 +732,11 @@ void Task_MQTT_Message_Handler(void *pvParameters)
         vTaskDelete(NULL);
         return;
     }
-    ESP_LOGW(TAG, "WiFi 连接成功！");
 
     // ---------- 等待网络稳定（手机热点 NAT 需要时间）----------
     vTaskDelay(pdMS_TO_TICKS(3000));
 
     // ---------- NTP 时间同步 ----------
-    ESP_LOGI(TAG, "正在同步 NTP 时间...");
     esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
     esp_sntp_setservername(0, "cn.pool.ntp.org");
     esp_sntp_setservername(1, "ntp.aliyun.com");
@@ -708,11 +745,9 @@ void Task_MQTT_Message_Handler(void *pvParameters)
 
     for (int i = 0; i < 15; i++) {
         if (time(NULL) > 1000000000LL) {
-            ESP_LOGI(TAG, "✅ NTP 同步成功，时间戳: %lld", (long long)time(NULL));
             break;
         }
         vTaskDelay(pdMS_TO_TICKS(1000));
-        ESP_LOGI(TAG, "⏳ 等待 NTP... (%d/15)", i + 1);
     }
     if (time(NULL) < 1000000000LL) {
         ESP_LOGW(TAG, "⚠️ NTP 同步未完成，使用相对时间戳");
@@ -736,10 +771,8 @@ void Task_MQTT_Message_Handler(void *pvParameters)
         ESP_LOGW(TAG, "⚠️ MQTT 暂未连接，将继续处理消息队列（连接后自动发送）");
     }
 
-    ESP_LOGW(TAG, "✅ 初始化完成，开始处理消息队列...");
 
     // ---------- 主循环：从消息队列取数据并上报 ----------
-
     while (1) {
         Sensor_Message_t message;
 

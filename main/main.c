@@ -12,10 +12,9 @@
 #include "MPU6050.h"
 #include "MessageQueue.h"
 #include "mqtt.h"
-#include "Key.h"
 #include "rtc_driver.h"
 #include "GetBaLevel.h"
-
+#include "Buzzer.h"
 
 void app_main(void) 
 {
@@ -33,11 +32,10 @@ void app_main(void)
 		ESP_LOGE("APP_MAIN", "I2C总线初始化失败");
 		return;
 	}
-	ESP_LOGI("APP_MAIN", "I2C总线初始化成功");
 	
-	 // 整个程序只在这里写一次！
+	// 整个程序只在这里写一次！
     ESP_ERROR_CHECK(gpio_install_isr_service(0)); 
-    ESP_LOGI("APP_MAIN", "GPIO ISR 服务安装成功");
+    // ESP_LOGI("APP_MAIN", "GPIO ISR 服务安装成功");  //成功就不管，没必要输出了
 
 	// 初始化消息队列
 	if (!Message_Queue_Init()) {
@@ -46,12 +44,15 @@ void app_main(void)
 	
 	// RTC初始化
 	esp_err_t rtc_ret = Rtc_Init();
-
-	//初始化KEY
-	Key_Init(NULL);
+	if(rtc_ret != ESP_OK) {
+		ESP_LOGE("APP_MAIN", "RTC 初始化失败: %s", esp_err_to_name(rtc_ret));
+	}
 
 	//获取电池电量初始化
 	Battery_Level_Init();
+
+	// 初始化蜂鸣器
+	buzzer_init(BUZZER_GPIO_NUM, BUZZER_FREQ_HZ);
 
 	vTaskDelay(pdMS_TO_TICKS(500)); 	//等待500ms，确保I2C总线和MessageQueue等设备初始化完成
 
@@ -59,7 +60,7 @@ void app_main(void)
 	xTaskCreate(Task_Max30102_Monitor, "Task_Max30102_Monitor", 4096, NULL, 3, NULL);
 	xTaskCreate(Task_Mpu6050_Monitor, "Task_Mpu6050_Monitor", 4096, NULL, 3, NULL);
 	xTaskCreate(Task_MQTT_Message_Handler,"Task_MQTT_Message_Handler",10240 ,NULL,3,NULL);
-	xTaskCreate(Task_OLED_Show,"Task_OLED_Show",4096 ,NULL,2,NULL);
+	xTaskCreate(Task_OLED_Show,"Task_OLED_Show",8192 ,NULL,2,NULL);
 
 	// 短暂延迟确保任务启动，然后让app_main自然结束
     vTaskDelay(pdMS_TO_TICKS(100));
