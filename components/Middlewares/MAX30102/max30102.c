@@ -227,9 +227,9 @@ void Max30102_Gpio_Isr_Init(TaskHandle_t task_handle) {
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_NEGEDGE
     };
-    ESP_ERROR_CHECK(gpio_config(&io_conf));
-    ESP_ERROR_CHECK(gpio_install_isr_service(0));
-    ESP_ERROR_CHECK(gpio_isr_handler_add(MAX30102_INT_GPIO, max30102_isr_handler, NULL));
+	// 这一行是把具体的“MAX30102中断函数”挂载到具体的“GPIO管脚”上。
+	// 每个传感器（MAX30102, MPU6050）都要有自己的一行这个代码。
+	ESP_ERROR_CHECK(gpio_isr_handler_add(MAX30102_INT_GPIO, max30102_isr_handler, NULL));
 }
 
 // --- 汉明窗系数 ---
