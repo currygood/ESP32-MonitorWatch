@@ -23,6 +23,7 @@
 #include "rtc_driver.h"
 #include <time.h>
 #include "GetBaLevel.h"
+#include "Key.h"
 
 static const char *TAG = "OLED";
 
@@ -980,7 +981,9 @@ void Task_OLED_Show(void *pvParameters)
 	static uint32_t lastBatteryUpdate = 0;
 
 	ESP_LOGI("OLED", "进入UI刷新循环...");
-	
+
+	key_id_t key_id;
+
 	while(1)
 	{
 		// --- A. 时间对时逻辑 (关键：不再阻塞，在循环内异步检测) ---
@@ -1032,6 +1035,12 @@ void Task_OLED_Show(void *pvParameters)
 		} else {
 			OLED_ClearArea(0, 0, 80, 8); // 对时成功后清除配网提示
 			OLED_ShowString(0, 0, "Online", OLED_6X8);
+		}
+		
+		key_id = Key_Get();
+		if(key_id == KEY_1)
+		{
+			// 处理按键1的逻辑
 		}
 
 		// --- C. 更新显示并休眠 ---

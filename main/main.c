@@ -15,6 +15,7 @@
 #include "rtc_driver.h"
 #include "GetBaLevel.h"
 #include "Buzzer.h"
+#include "Key.h"
 
 void app_main(void) 
 {
@@ -53,6 +54,9 @@ void app_main(void)
 
 	// 初始化蜂鸣器
 	buzzer_init(BUZZER_GPIO_NUM, BUZZER_FREQ_HZ);
+
+	// 按键初始化
+	Key_Init(NULL); // 传入 NULL 使用轮询模式，后续通过 Key_Get() 获取按键事件
 
 	vTaskDelay(pdMS_TO_TICKS(500)); 	//等待500ms，确保I2C总线和MessageQueue等设备初始化完成
 
