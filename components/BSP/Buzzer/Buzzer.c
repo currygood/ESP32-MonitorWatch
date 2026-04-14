@@ -58,3 +58,8 @@ void Task_Buzzer(void *pvParameters)
 		vTaskDelay(pdMS_TO_TICKS(5000)); // 每5秒切换一次状态
 	}
 }
+
+bool buzzer_get_state(void)
+{
+	return s_buzzer_on;
+}

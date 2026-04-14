@@ -36,6 +36,13 @@ void buzzer_off(void);
  */
 void buzzer_toggle(void);
 
+/**
+ * @brief 获取蜂鸣器状态（响/不响）
+ * @return true 响
+ * @return false 不响
+ */
+bool buzzer_get_state(void);
+
 #ifdef __cplusplus
 }
 #endif

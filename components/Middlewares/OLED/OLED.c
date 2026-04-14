@@ -24,6 +24,7 @@
 #include <time.h>
 #include "GetBaLevel.h"
 #include "Key.h"
+#include "Buzzer.h"
 
 static const char *TAG = "OLED";
 
@@ -1038,9 +1039,10 @@ void Task_OLED_Show(void *pvParameters)
 		}
 		
 		key_id = Key_Get();
-		if(key_id == KEY_1)
+		if(key_id == KEY_1 && buzzer_get_state())
 		{
 			// 处理按键1的逻辑
+			buzzer_off();
 		}
 
 		// --- C. 更新显示并休眠 ---

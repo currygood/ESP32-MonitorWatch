@@ -2,6 +2,8 @@
 #include "i2c_driver.h"
 #include <stdlib.h>
 #include <math.h>
+#include "Buzzer.h"
+#include "esp_timer.h"
 
 
 static const char *TAG = "MPU6050";
@@ -136,14 +138,14 @@ bool Mpu6050_Detect_Fall_Or_Convulsion(int16_t *ax_buf, int16_t *ay_buf, int16_t
     float activity_score = total_variation / len;
 
     // A. 跌倒检测
-    if (max_mag > 2.0f && activity_score > 0.15f) {
+    if (max_mag > 2.3f && activity_score > 0.18f) {
         ESP_LOGW(TAG, "🔔 撞击报警!");
         s_current_is_abnormal = true; 
         return true;
     }
 
     // B. 抽搐检测
-    if (activity_score > 0.25f || (high_peak_count > 8 && activity_score > 0.2f)) {
+    if (activity_score > 0.3f || (high_peak_count > 12 && activity_score > 0.25f)) {
         ESP_LOGW(TAG, "🚨 抽搐报警!");
         s_current_is_abnormal = true;
         return true;
@@ -194,6 +196,8 @@ void Task_Mpu6050_Monitor(void *pvParameters) {
 	vTaskDelay(pdMS_TO_TICKS(100));	// 等待初始化完成
 
     int16_t ax, ay, az, gx, gy, gz;
+	static bool isBuzzerOn = false;
+	static uint32_t last_buzzer_time = 0;
 
     ESP_LOGI(TAG, "Monitor task started");
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -242,6 +246,13 @@ void Task_Mpu6050_Monitor(void *pvParameters) {
                     ESP_LOGW(TAG, "ALARM! 可能癫痫抽搐或跌倒事件");
                     // 通过消息队列发送跌倒/抽搐预警
                     Message_Queue_Send_Alert(true, true, false);
+					// 如果蜂鸣器未响，才响
+					if(!isBuzzerOn)
+					{
+						buzzer_on();	//如果心跳过快，蜂鸣器响15秒
+						isBuzzerOn=true;
+						last_buzzer_time = esp_timer_get_time();
+					}
                 }
 
                 int32_t sum_ax = 0, sum_ay = 0, sum_az = 0;
@@ -264,5 +275,10 @@ void Task_Mpu6050_Monitor(void *pvParameters) {
             ESP_LOGE(TAG, "读取原始数据失败: %d", ret);
             vTaskDelay(pdMS_TO_TICKS(50));
         }
+		
+		if (isBuzzerOn && esp_timer_get_time() - last_buzzer_time >= 15000000) {
+			isBuzzerOn = false;
+			buzzer_off(); 
+		}
     }
 }

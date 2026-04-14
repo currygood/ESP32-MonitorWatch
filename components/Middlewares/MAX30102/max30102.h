@@ -34,11 +34,12 @@
 #define REG_PART_ID         0xFF
 
 // 算法相关宏
-#define MAX30102_BUFFER_SIZE     500
+
+#define MAX30102_BUFFER_SIZE     1000
 #define MAX30102_MA4_SIZE        4
 #define MAX30102_HAMMING_SIZE    5
-#define IR_BUF_LEN               500
-#define RED_BUF_LEN              500
+#define IR_BUF_LEN               1000
+#define RED_BUF_LEN              1000
 
 // 心率预警相关配置
 #define HEART_RATE_BASELINE_SAMPLES     30    // 基准心率计算样本数
