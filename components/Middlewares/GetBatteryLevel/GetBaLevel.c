@@ -94,28 +94,19 @@ static esp_err_t Battery_Adc_Calibration_Init(void)
 /**
  * @brief 读取电池电压（原始ADC值）
  */
-esp_err_t Battery_Read_Adc_Value(uint32_t *adc_value)
+uint32_t Battery_Read_Adc_Value()
 {
     if (!Battery_Level_Initialized) {
         ESP_LOGE(TAG, "电池电量检测模块未初始化");
         return ESP_ERR_INVALID_STATE;
     }
-    
-    if (adc_value == NULL) {
-        ESP_LOGE(TAG, "ADC值指针为空");
-        return ESP_ERR_INVALID_ARG;
-    }
-    
     // 读取ADC原始值
     int raw_adc = adc1_get_raw(BATTERY_ADC_CHANNEL);
     if (raw_adc < 0) {
         ESP_LOGE(TAG, "ADC读取失败: %d", raw_adc);
         return ESP_FAIL;
     }
-    
-    *adc_value = (uint32_t)raw_adc;
-    
-    return ESP_OK;
+    return (uint32_t)raw_adc;
 }
 
 /**
@@ -132,26 +123,29 @@ esp_err_t Battery_Read_Voltage(float *voltage)
         ESP_LOGE(TAG, "电压指针为空");
         return ESP_ERR_INVALID_ARG;
     }
-    
-    uint32_t adc_value;
-    esp_err_t ret = Battery_Read_Adc_Value(&adc_value);
-    if (ret != ESP_OK) {
-        return ret;
+
+    // 获取adc值和简单滤波，采样次数减少为16次，防止阻塞
+    uint32_t adc_value = 0;
+    const uint8_t sample_count = 16;
+    for (uint8_t i = 0; i < sample_count; ++i) {
+        adc_value += Battery_Read_Adc_Value();
+        vTaskDelay(1 / portTICK_PERIOD_MS); // 每次采样间隔1ms，避免阻塞
     }
-    
+    adc_value /= sample_count;
+
     // 使用校准特性将ADC值转换为电压
     uint32_t voltage_mv = esp_adc_cal_raw_to_voltage(adc_value, adc_chars);
-    
+
     // 转换为伏特并考虑电压分压比
     *voltage = (float)voltage_mv / 1000.0f * VOLTAGE_DIVIDER_RATIO;
-    
+
     return ESP_OK;
 }
 
 /**
- * @brief 计算电池电量百分比
+ * @brief 计算电池电量百分比-用3.3v测试的
  */
-uint8_t Battery_Calculate_Percentage(float voltage)
+uint8_t Battery_Calculate_Percentage_Test33V(float voltage)
 {
     // 限制电压在有效范围内
     if (voltage >= BATTERY_FULL_VOLTAGE) {
@@ -173,6 +167,16 @@ uint8_t Battery_Calculate_Percentage(float voltage)
     }
     
     return (uint8_t)percentage;
+}
+
+/**
+ * @brief 计算电池电量百分比-真正用到电池上的
+ */
+
+uint8_t Battery_Calculate_Percentage(float voltage)
+{
+    uint8_t percentage = voltage * 100 / BATTERY_FULL_VOLTAGE;
+    return percentage >= 100?100:percentage;
 }
 
 /**

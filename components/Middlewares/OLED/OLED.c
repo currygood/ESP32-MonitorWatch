@@ -981,7 +981,7 @@ void Task_OLED_Show(void *pvParameters)
 	bool isBeginShowBatteryLevel = false;
 	static uint32_t lastBatteryUpdate = 0;
 
-	ESP_LOGI("OLED", "进入UI刷新循环...");
+	ESP_LOGI("OLED", "进入UI刷新循环");
 
 	key_id_t key_id;
 
@@ -1020,19 +1020,33 @@ void Task_OLED_Show(void *pvParameters)
 
 		// 2. 绘制电池电量
 		uint32_t currentTime = xTaskGetTickCount() * portTICK_PERIOD_MS;
-		if (!isBeginShowBatteryLevel || (currentTime - lastBatteryUpdate >= 300000)) {
+		if (!isBeginShowBatteryLevel || (currentTime - lastBatteryUpdate >= 7000)) {
 			Battery_Read_Voltage(&voltage);
 			uint8_t batteryLevel = Battery_Calculate_Percentage(voltage);
-			OLED_ClearArea(105, 0, 24, 8); // 清除电量区域
-			OLED_ShowNum(105, 0, batteryLevel, 3, OLED_6X8);
-			
+			OLED_ClearArea(99, 0, 24, 8); // 清除电量区域
+			OLED_ShowNum(99, 0, batteryLevel, 3, OLED_6X8);
+			OLED_ShowChar(120, 0, '%', OLED_6X8);
 			lastBatteryUpdate = currentTime;
 			isBeginShowBatteryLevel = true;
 		}
 
+		//Test
+		// uint32_t adc_value;
+		// Battery_Read_Adc_Value(&adc_value);
+		// OLED_ClearArea(105, 0, 24, 8); // 清除电量区域
+		// OLED_ShowNum(105, 0, adc_value, 4, OLED_6X8);
+		
+		// Battery_Read_Voltage(&voltage);
+		// uint8_t batteryLevel = Battery_Calculate_Percentage(voltage);
+		// // OLED_ClearArea(105, 0, 24, 8); // 清除电量区域
+		// // OLED_ShowNum(105, 0, batteryLevel, 3, OLED_6X8);
+		// OLED_ClearArea(60,0,45, 8);
+		// OLED_ShowFloatNum(60, 0, voltage, 4,1, OLED_6X8);
+		
+
 		// 3. 绘制状态指示 (可选: 提示正在配网)
 		if (!isTimeSynced) {
-			OLED_ShowString(0, 0, "WiFi Config...", OLED_6X8);
+			OLED_ShowString(0, 0, "WiFi wait", OLED_6X8);
 		} else {
 			OLED_ClearArea(0, 0, 80, 8); // 对时成功后清除配网提示
 			OLED_ShowString(0, 0, "Online", OLED_6X8);
