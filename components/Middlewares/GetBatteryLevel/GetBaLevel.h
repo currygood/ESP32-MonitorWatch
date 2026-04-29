@@ -15,11 +15,11 @@
 // --- 电压转换参数 ---
 #define ADC_MAX_VALUE           4095             // 12位ADC最大值
 #define REFERENCE_VOLTAGE       3.3f             // 参考电压3.3V
-#define VOLTAGE_DIVIDER_RATIO    2.0f             // 电压分压比（如果使用分压电路）
+#define VOLTAGE_DIVIDER_RATIO    1.0f             // 电压分压比（无分压时为1.0）
 
-// --- 电池电压范围（典型锂电池） ---
-#define BATTERY_FULL_VOLTAGE     4.2f            // 满电电压
-#define BATTERY_EMPTY_VOLTAGE    3.3f            // 空电电压
+// --- 电池电压范围（典型锂电池） ---  通过分压计算的大概结果
+#define BATTERY_FULL_VOLTAGE 2.0f
+#define BATTERY_EMPTY_VOLTAGE 1.5f
 
 // --- 全局变量声明 ---
 extern bool Battery_Level_Initialized;
@@ -39,7 +39,7 @@ esp_err_t Battery_Level_Init(void);
  * @param adc_value 输出的ADC原始值
  * @return esp_err_t 读取结果
  */
-esp_err_t Battery_Read_Adc_Value(uint32_t *adc_value);
+uint32_t Battery_Read_Adc_Value();
 
 /**
  * @brief 读取电池电压（转换为电压值）
@@ -47,6 +47,13 @@ esp_err_t Battery_Read_Adc_Value(uint32_t *adc_value);
  * @return esp_err_t 读取结果
  */
 esp_err_t Battery_Read_Voltage(float *voltage);
+
+/**
+ * @brief 计算电池电量百分比
+ * @param voltage 电池电压
+ * @return uint8_t 电量百分比（0-100）
+ */
+uint8_t Battery_Calculate_Percentage_Test33V(float voltage);
 
 /**
  * @brief 计算电池电量百分比

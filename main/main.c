@@ -15,6 +15,7 @@
 #include "rtc_driver.h"
 #include "GetBaLevel.h"
 #include "Buzzer.h"
+#include "Key.h"
 
 void app_main(void) 
 {
@@ -50,6 +51,9 @@ void app_main(void)
 
 	//获取电池电量初始化
 	Battery_Level_Init();
+	
+	//初始化按键
+	Key_Init(NULL);
 
 	// 初始化蜂鸣器
 	buzzer_init(BUZZER_GPIO_NUM, BUZZER_FREQ_HZ);

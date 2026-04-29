@@ -6,6 +6,7 @@
 #include <string.h>
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
+#include "Buzzer.h"
 
 
 static const char *TAG = "MAX30102";
@@ -122,7 +123,7 @@ void Max30102_Update_Heart_Rate_Baseline(uint32_t current_hr)
     }
 }
 
-// 检查心率是否过快
+// 检查心率是否过快/过低
 bool Max30102_Check_Heart_Rate_Warning(uint32_t current_hr)
 {
     // 检查心率是否在有效范围内
@@ -144,7 +145,15 @@ bool Max30102_Check_Heart_Rate_Warning(uint32_t current_hr)
                      current_hr, Heart_Rate_Baseline);
         }
         return true;
-    } else {
+    }else if(current_hr < warning_threshold - HEART_RATE_WARNING_THRESHOLD_LOW){			//心率过低
+		if (!Heart_Rate_Warning_Active) {
+            Heart_Rate_Warning_Active = true;
+            ESP_LOGW(TAG, "⚠️ 心率过低预警! 当前心率: %lu bpm, 基准心率: %lu bpm", 
+                     current_hr, Heart_Rate_Baseline);
+        }
+        return true;
+	}
+	else {
         if (Heart_Rate_Warning_Active) {
             Heart_Rate_Warning_Active = false;
             ESP_LOGI(TAG, "心率恢复正常: %lu bpm", current_hr);
@@ -522,6 +531,8 @@ void Task_Max30102_Monitor(void *pvParameters) {
     uint8_t fifo_wp, fifo_rp;
     int samples_read;
     int i;
+	static uint32_t last_buzzer_time = 0;
+	static bool isBuzzerOn = false;
     
     ESP_LOGI(TAG, "Monitor task started");
     
@@ -650,6 +661,12 @@ void Task_Max30102_Monitor(void *pvParameters) {
                 ESP_LOGW(TAG, "癫痫早期症状检测: 心率过快! 当前: %ld bpm, 基准: %lu bpm, 阈值: %lu bpm", 
                          (long)n_heart_rate, Max30102_Get_Heart_Rate_Baseline(), 
                          Max30102_Get_Heart_Rate_Warning_Threshold());
+				if(!isBuzzerOn)
+                {
+                    buzzer_on();
+                    isBuzzerOn=true;
+                    last_buzzer_time = esp_timer_get_time();
+                } 
             }
             
             // 通过消息队列发送心率血氧数据
@@ -667,7 +684,11 @@ void Task_Max30102_Monitor(void *pvParameters) {
                 Message_Queue_Send_Alert(false, false, true);
             }
         }
-        
+        if (isBuzzerOn && esp_timer_get_time() - last_buzzer_time >= 15000000) {
+            isBuzzerOn = false;
+            buzzer_off();
+        }
+
         vTaskDelay(pdMS_TO_TICKS(100));
     }
     

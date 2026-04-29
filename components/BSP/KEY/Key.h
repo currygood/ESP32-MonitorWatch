@@ -8,38 +8,41 @@
 
 /* ===================== 用户配置区 ===================== */
 #define KEY_NUM           2
-#define KEY_DEBOUNCE_MS   20
+#define KEY_DEBOUNCE_MS   20    // 消抖时间
+#define KEY_LONG_MS       1000   // 长按判定时间 (ms)
+#define KEY_DOUBLE_MS     500   // 双击间隔判定时间 (ms)
 
 #define KEY_GPIO_1        GPIO_NUM_15
 #define KEY_GPIO_2        GPIO_NUM_10
 /* ===================================================== */
 
-/**
- * @brief 按键 ID 枚举
- */
+typedef enum {
+    KEY_EVENT_NONE = 0,
+    KEY_EVENT_SINGLE_CLICK, // 单击
+    KEY_EVENT_DOUBLE_CLICK, // 双击
+    KEY_EVENT_LONG_PRESS,   // 长按
+} key_event_t;
+
 typedef enum {
     KEY_NONE = 0,
     KEY_1    = 1,
     KEY_2    = 2,
 } key_id_t;
 
-/**
- * @brief 按键回调函数类型（事件驱动模式使用）
- *        在 FreeRTOS 定时器任务上下文中调用，不可阻塞
- */
-typedef void (*key_callback_t)(key_id_t key);
+// 组合结构体用于 Key_Get 返回
+typedef struct {
+    key_id_t id;
+    key_event_t event;
+} key_result_t;
 
 /**
- * @brief 初始化按键模块
- * @param cb 按键按下时的回调，传 NULL 则使用轮询模式（Key_Get）
+ * @brief 按键回调函数类型
+ * @param id 按键ID
+ * @param event 事件类型（单击/双击/长按）
  */
+typedef void (*key_callback_t)(key_id_t id, key_event_t event);
+
 void Key_Init(key_callback_t cb);
+key_result_t Key_Get(void);
 
-/**
- * @brief 轮询获取一次按键事件（非阻塞）
- * @return KEY_NONE 无事件；KEY_1 / KEY_2 对应按键被按下
- * @note   仅在 cb=NULL（轮询模式）时有效
- */
-key_id_t Key_Get(void);
-
-#endif /* __KEY_H__ */
+#endif
