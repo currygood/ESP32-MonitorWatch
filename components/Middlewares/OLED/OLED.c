@@ -1,17 +1,3 @@
-/**
- * OLED SSD1306 驱动程序（ESP32-S3 / ESP-IDF I2C Master 版本）
- *
- * 原始程序由江协科技创建并免费开源共享（jiangxiekeji.com）
- * ESP-IDF 移植：将 STM32 软件模拟 I2C 底层替换为 ESP-IDF i2c_master 驱动，
- * 所有显存操作、绘图函数、字符显示函数保持不变。
- *
- * 移植说明：
- *   - 删除 OLED_W_SCL / OLED_W_SDA / OLED_GPIO_Init / OLED_I2C_Start/Stop/SendByte
- *   - OLED_WriteCommand / OLED_WriteData 改用 i2c_master_transmit()
- *   - OLED_Init() 增加 i2c_master_dev_handle_t 参数，不再内部初始化 GPIO
- *   - 其余函数签名与原版完全相同
- */
-
 #include "OLED.h"
 #include <string.h>
 #include <math.h>
@@ -963,11 +949,9 @@ void OLED_DrawArc(int16_t X, int16_t Y, uint8_t Radius, int16_t StartAngle, int1
 void Task_OLED_Show(void *pvParameters)
 {
 	// 1. 基础硬件初始化 (尽快完成)
-	// 1. 基础硬件初始化 (尽快完成)
 	i2c_master_bus_handle_t i2c_bus = I2c_Get_Global_Bus_Handle();
 	if (i2c_bus != NULL) {
 		if (OLED_Init(i2c_bus) == ESP_OK) {
-			ESP_LOGI("OLED", "OLED初始化成功");
 			OLED_Clear();
 			OLED_Update();
 		} else {
@@ -975,15 +959,13 @@ void Task_OLED_Show(void *pvParameters)
 		}
 	}
 
+	bool isOLEDShow=false;
+	key_result_t keyGet;
 	// 状态变量
 	float voltage;
 	bool isTimeSynced = false;          // 标记是否已经完成了系统时间->RTC的同步
 	bool isBeginShowBatteryLevel = false;
 	static uint32_t lastBatteryUpdate = 0;
-
-	ESP_LOGI("OLED", "进入UI刷新循环");
-
-	key_id_t key_id;
 
 	while(1)
 	{
@@ -999,67 +981,63 @@ void Task_OLED_Show(void *pvParameters)
 			}
 		}
 
-		// --- B. 屏幕内容绘制 ---
-		
-		// 1. 绘制时间
-		if (Rtc_Is_Initialized()) {
-			rtc_time_t current_time;
-			if (Rtc_Get_Time(&current_time) == ESP_OK) {
-				// 清除时间区域并绘制（居中显示）
-				OLED_ClearArea(0, 20, 128, 24);
-				// 格式 HH:MM:SS (12x24 字体)
-				OLED_ShowNum(16, 20, current_time.hours, 2, OLED_12X24);
-				OLED_ShowChar(40, 20, ':', OLED_12X24);
-				OLED_ShowNum(52, 20, current_time.minutes, 2, OLED_12X24);
-				OLED_ShowChar(76, 20, ':', OLED_12X24);
-				OLED_ShowNum(88, 20, current_time.seconds, 2, OLED_12X24);
-			}
-		} else {
-			OLED_ShowString(0, 20, "RTC Waiting...", OLED_8X16);
-		}
-
-		// 2. 绘制电池电量
-		uint32_t currentTime = xTaskGetTickCount() * portTICK_PERIOD_MS;
-		if (!isBeginShowBatteryLevel || (currentTime - lastBatteryUpdate >= 7000)) {
-			Battery_Read_Voltage(&voltage);
-			uint8_t batteryLevel = Battery_Calculate_Percentage(voltage);
-			OLED_ClearArea(99, 0, 24, 8); // 清除电量区域
-			OLED_ShowNum(99, 0, batteryLevel, 3, OLED_6X8);
-			OLED_ShowChar(120, 0, '%', OLED_6X8);
-			lastBatteryUpdate = currentTime;
-			isBeginShowBatteryLevel = true;
-		}
-
-		//Test
-		// uint32_t adc_value;
-		// Battery_Read_Adc_Value(&adc_value);
-		// OLED_ClearArea(105, 0, 24, 8); // 清除电量区域
-		// OLED_ShowNum(105, 0, adc_value, 4, OLED_6X8);
-		
-		// Battery_Read_Voltage(&voltage);
-		// uint8_t batteryLevel = Battery_Calculate_Percentage(voltage);
-		// // OLED_ClearArea(105, 0, 24, 8); // 清除电量区域
-		// // OLED_ShowNum(105, 0, batteryLevel, 3, OLED_6X8);
-		// OLED_ClearArea(60,0,45, 8);
-		// OLED_ShowFloatNum(60, 0, voltage, 4,1, OLED_6X8);
-		
-
-		// 3. 绘制状态指示 (可选: 提示正在配网)
-		if (!isTimeSynced) {
-			OLED_ShowString(0, 0, "WiFi wait", OLED_6X8);
-		} else {
-			OLED_ClearArea(0, 0, 80, 8); // 对时成功后清除配网提示
-			OLED_ShowString(0, 0, "Online", OLED_6X8);
-		}
-		
-		key_id = Key_Get();
-		if(key_id == KEY_1 && buzzer_get_state())
+		keyGet = Key_Get();
+		if(keyGet.id == KEY_1)
 		{
 			// 处理按键1的逻辑
-			buzzer_off();
+			if(keyGet.event==KEY_EVENT_SINGLE_CLICK)
+				buzzer_off();
+			if(keyGet.event==KEY_EVENT_LONG_PRESS)
+				isOLEDShow=!isOLEDShow;
+		}
+
+		if(isOLEDShow)
+		{
+			// --- B. 屏幕内容绘制 ---
+			// 1. 绘制时间
+			if (Rtc_Is_Initialized()) {
+				rtc_time_t current_time;
+				if (Rtc_Get_Time(&current_time) == ESP_OK) {
+					// 清除时间区域并绘制（居中显示）
+					OLED_ClearArea(0, 20, 128, 24);
+					// 格式 HH:MM:SS (12x24 字体)
+					OLED_ShowNum(16, 20, current_time.hours, 2, OLED_12X24);
+					OLED_ShowChar(40, 20, ':', OLED_12X24);
+					OLED_ShowNum(52, 20, current_time.minutes, 2, OLED_12X24);
+					OLED_ShowChar(76, 20, ':', OLED_12X24);
+					OLED_ShowNum(88, 20, current_time.seconds, 2, OLED_12X24);
+				}
+			} else {
+				OLED_ShowString(0, 20, "RTC Waiting...", OLED_8X16);
+			}
+
+			// 2. 绘制电池电量
+			uint32_t currentTime = xTaskGetTickCount() * portTICK_PERIOD_MS;
+			if (!isBeginShowBatteryLevel || (currentTime - lastBatteryUpdate >= 7000)) {
+				Battery_Read_Voltage(&voltage);
+				uint8_t batteryLevel = Battery_Calculate_Percentage(voltage);
+				OLED_ClearArea(99, 0, 24, 8); // 清除电量区域
+				OLED_ShowNum(99, 0, batteryLevel, 3, OLED_6X8);
+				OLED_ShowChar(120, 0, '%', OLED_6X8);
+				lastBatteryUpdate = currentTime;
+				isBeginShowBatteryLevel = true;
+			}
+		
+			// 3. 绘制状态指示 (可选: 提示正在配网)
+			if (!isTimeSynced) {
+				OLED_ShowString(0, 0, "WiFi wait", OLED_6X8);
+			} else {
+				OLED_ClearArea(0, 0, 80, 8); // 对时成功后清除配网提示
+				OLED_ShowString(0, 0, "Online", OLED_6X8);
+			}
+		}
+		else
+		{
+			OLED_Clear();
 		}
 
 		// --- C. 更新显示并休眠 ---
+
 		OLED_Update();
 		vTaskDelay(pdMS_TO_TICKS(200)); // 适当降低频率减少闪烁，200ms对秒表显示足够
 	}
