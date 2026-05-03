@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -16,6 +15,7 @@
 #include "GetBaLevel.h"
 #include "Buzzer.h"
 #include "Key.h"
+#include "UI_Events.h"
 
 void app_main(void) 
 {
@@ -53,19 +53,30 @@ void app_main(void)
 	Battery_Level_Init();
 	
 	//初始化按键
-	Key_Init(NULL);
+	Key_Init();
 
 	// 初始化蜂鸣器
 	buzzer_init(BUZZER_GPIO_NUM, BUZZER_FREQ_HZ);
 
 	vTaskDelay(pdMS_TO_TICKS(500)); 	//等待500ms，确保I2C总线和MessageQueue等设备初始化完成
-
+	// 1. 创建 UI 消息队列 (容量10，存 ui_command_t)
+    QueueHandle_t ui_msg_queue = xQueueCreate(10, sizeof(ui_command_t));
+    // 2. 创建按键逻辑任务，把队列句柄传进去
+    
 	// 创建任务
-	xTaskCreate(Task_Max30102_Monitor, "Task_Max30102_Monitor", 4096, NULL, 3, NULL);
-	xTaskCreate(Task_Mpu6050_Monitor, "Task_Mpu6050_Monitor", 4096, NULL, 3, NULL);
-	xTaskCreate(Task_MQTT_Message_Handler,"Task_MQTT_Message_Handler",10240 ,NULL,3,NULL);
-	xTaskCreate(Task_OLED_Show,"Task_OLED_Show",8192 ,NULL,2,NULL);
+	// xTaskCreate(Task_Max30102_Monitor, "Task_Max30102_Monitor", 4096, NULL, 3, NULL);
+	// xTaskCreate(Task_Mpu6050_Monitor, "Task_Mpu6050_Monitor", 4096, NULL, 3, NULL);
+	// xTaskCreate(Task_MQTT_Message_Handler,"Task_MQTT_Message_Handler",10240 ,NULL,3,NULL);
+	// xTaskCreate(Task_OLED_Show,"Task_OLED_Show",8192 ,NULL,2,NULL);
+	// xTaskCreate(Task_Buzzer,"Task_Buzzer",1024 ,NULL,3,NULL);
 
+	xTaskCreatePinnedToCore(Task_MQTT_Message_Handler, "MQTT_Task", 10240, NULL, 3, NULL, 0); 
+	xTaskCreatePinnedToCore(Task_Max30102_Monitor, "Sensor_Task", 4096, NULL, 5, NULL, 1);
+	xTaskCreatePinnedToCore(Task_Mpu6050_Monitor, "MPU6050_Task", 4096, NULL, 5, NULL, 1);
+	xTaskCreatePinnedToCore(Task_OLED_Show, "Task_OLED_Show", 8192, (void*)ui_msg_queue, 2, NULL, 1);
+	xTaskCreatePinnedToCore(Task_Buzzer,"Task_Buzzer",2048,NULL,1,NULL,0);
+	xTaskCreatePinnedToCore(Task_Key_Processor, "Key_Proc", 3072, (void*)ui_msg_queue, 4, NULL, 1);
+	
 	// 短暂延迟确保任务启动，然后让app_main自然结束
     vTaskDelay(pdMS_TO_TICKS(100));
 }

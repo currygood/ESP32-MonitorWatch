@@ -4,14 +4,16 @@ set(src_dirs
 	OLED/OLED_Data.c
 	MPU6050/MPU6050.c
 	MessageQueue/MessageQueue.c
-	GetBatteryLevel/GetBaLevel.c)
+	GetBatteryLevel/GetBaLevel.c
+	Task_Key.c)
 
 set(include_dirs
 	OLED
     MAX30102
     MPU6050
 	MessageQueue
-	GetBatteryLevel)
+	GetBatteryLevel
+	./)
 
 set(requires
     driver

@@ -502,9 +502,7 @@ esp_err_t Wifi_Init(void)
                 ESP_LOGW(TAG, ">>> WiFi 连接成功（NVS 凭据）");
                 return ESP_OK;
             } else {
-                ESP_LOGE(TAG, "WiFi 连接超时（NVS 凭据失效？），5 秒后重启...");
-                vTaskDelay(pdMS_TO_TICKS(5000));
-                esp_restart();
+                ESP_LOGE(TAG, "WiFi 连接超时（NVS 凭据失效？）或者未开启wifi");
                 return ESP_FAIL;
             }
         }
@@ -551,9 +549,7 @@ esp_err_t Wifi_Init(void)
         return ESP_OK;
     }
 
-    ESP_LOGE(TAG, "所有 WiFi 连接方式均失败，即将重启...");
-    vTaskDelay(pdMS_TO_TICKS(2000));
-    esp_restart();
+    ESP_LOGE(TAG, "所有 WiFi 连接方式均失败，进入离线模式");
     return ESP_FAIL;
 }
 
@@ -727,10 +723,10 @@ void Task_MQTT_Message_Handler(void *pvParameters)
     // ---------- WiFi 连接（含 BLE 配网逻辑）----------
     ret = Wifi_Init();
     if (ret != ESP_OK) {
-        // Wifi_Init 内部超时时会调用 esp_restart()，正常不会走到这里
-        ESP_LOGE(TAG, "WiFi 初始化失败");
-        vTaskDelete(NULL);
-        return;
+        ESP_LOGE(TAG, "❌ 网络初始化完全失败，进入离线模式...");
+        // 即使 WiFi 失败，如果你的业务允许离线，可以不 delete，但要跳过网络操作
+        // 这里建议直接删除任务或者进入一个纯离线循环
+        vTaskDelete(NULL); return; 
     }
 
     // ---------- 等待网络稳定（手机热点 NAT 需要时间）----------

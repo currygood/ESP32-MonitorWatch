@@ -531,8 +531,6 @@ void Task_Max30102_Monitor(void *pvParameters) {
     uint8_t fifo_wp, fifo_rp;
     int samples_read;
     int i;
-	static uint32_t last_buzzer_time = 0;
-	static bool isBuzzerOn = false;
     
     ESP_LOGI(TAG, "Monitor task started");
     
@@ -661,12 +659,10 @@ void Task_Max30102_Monitor(void *pvParameters) {
                 ESP_LOGW(TAG, "癫痫早期症状检测: 心率过快! 当前: %ld bpm, 基准: %lu bpm, 阈值: %lu bpm", 
                          (long)n_heart_rate, Max30102_Get_Heart_Rate_Baseline(), 
                          Max30102_Get_Heart_Rate_Warning_Threshold());
-				if(!isBuzzerOn)
-                {
-                    buzzer_on();
-                    isBuzzerOn=true;
-                    last_buzzer_time = esp_timer_get_time();
-                } 
+				// 如果当前蜂鸣器没在响，才触发开启
+				Buzzer_Trigger_Alarm(true);
+            } else {
+				Buzzer_Trigger_Alarm(false);
             }
             
             // 通过消息队列发送心率血氧数据
@@ -684,11 +680,6 @@ void Task_Max30102_Monitor(void *pvParameters) {
                 Message_Queue_Send_Alert(false, false, true);
             }
         }
-        if (isBuzzerOn && esp_timer_get_time() - last_buzzer_time >= 15000000) {
-            isBuzzerOn = false;
-            buzzer_off();
-        }
-
         vTaskDelay(pdMS_TO_TICKS(100));
     }
     

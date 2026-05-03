@@ -192,9 +192,6 @@ void Task_Mpu6050_Monitor(void *pvParameters) {
     esp_log_level_set("gpio", ESP_LOG_ERROR);
     esp_log_level_set("i2c", ESP_LOG_ERROR);
 
-	static uint32_t last_buzzer_time = 0;
-	static bool isBuzzerOn = false;
-
 	Mpu6050_Init();
 	vTaskDelay(pdMS_TO_TICKS(100));	// 等待初始化完成
 
@@ -247,14 +244,11 @@ void Task_Mpu6050_Monitor(void *pvParameters) {
                     ESP_LOGW(TAG, "ALARM! 可能癫痫抽搐或跌倒事件");
                     // 通过消息队列发送跌倒/抽搐预警
                     Message_Queue_Send_Alert(true, true, false);
-					if(!isBuzzerOn)
-					{
-						buzzer_on();
-						isBuzzerOn=true;
-						last_buzzer_time = esp_timer_get_time();
-					} 
+					// 如果当前蜂鸣器没在响，才触发开启
+					Buzzer_Trigger_Alarm(true);
+                } else {
+					Buzzer_Trigger_Alarm(false);
                 }
-
                 int32_t sum_ax = 0, sum_ay = 0, sum_az = 0;
                 for (int i = 0; i < MPU6050_BUFFER_SIZE; i++) {
                     sum_ax += ax_buffer[i];
@@ -270,14 +264,9 @@ void Task_Mpu6050_Monitor(void *pvParameters) {
                 buffer_idx = 0;
             }
             vTaskDelay(pdMS_TO_TICKS(1000 / MPU6050_SAMPLES_PER_SEC));
-			if (isBuzzerOn && esp_timer_get_time() - last_buzzer_time >= 15000000) {
-				isBuzzerOn = false;
-				buzzer_off();
-			}
         } else {
             ESP_LOGE(TAG, "读取原始数据失败: %d", ret);
             vTaskDelay(pdMS_TO_TICKS(50));
-			buzzer_off();
         }
     }
 }
