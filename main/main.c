@@ -73,7 +73,7 @@ void app_main(void)
 	xTaskCreatePinnedToCore(Task_MQTT_Message_Handler, "MQTT_Task", 10240, NULL, 3, NULL, 0); 
 	xTaskCreatePinnedToCore(Task_Max30102_Monitor, "Sensor_Task", 4096, NULL, 5, NULL, 1);
 	xTaskCreatePinnedToCore(Task_Mpu6050_Monitor, "MPU6050_Task", 4096, NULL, 5, NULL, 1);
-	xTaskCreatePinnedToCore(Task_OLED_Show, "Task_OLED_Show", 8192, (void*)ui_msg_queue, 2, NULL, 1);
+	xTaskCreatePinnedToCore(Task_OLED_Show, "Task_OLED_Show", 10240, (void*)ui_msg_queue, 2, NULL, 1);
 	xTaskCreatePinnedToCore(Task_Buzzer,"Task_Buzzer",2048,NULL,1,NULL,0);
 	xTaskCreatePinnedToCore(Task_Key_Processor, "Key_Proc", 3072, (void*)ui_msg_queue, 4, NULL, 1);
 	

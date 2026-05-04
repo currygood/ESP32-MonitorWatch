@@ -546,6 +546,7 @@ esp_err_t Wifi_Init(void)
                                            pdMS_TO_TICKS(30000));
     if (bits & WIFI_CONNECTED_BIT) {
         ESP_LOGW(TAG, ">>> WiFi 连接成功（默认凭据）");
+	    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
         return ESP_OK;
     }
 
