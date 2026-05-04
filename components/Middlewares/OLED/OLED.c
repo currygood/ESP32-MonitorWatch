@@ -547,33 +547,49 @@ void OLED_ShowFloatNum(int16_t X, int16_t Y, double Number, uint8_t IntLength, u
 
 void OLED_ShowImage(int16_t X, int16_t Y, uint8_t Width, uint8_t Height, const uint8_t *Image)
 {
-    uint8_t i = 0, j = 0;
-    int16_t Page, Shift;
+    int16_t i, j;
+    uint8_t ImageRowHeight = (Height - 1) / 8 + 1; // 图像占用的“页”数（源数据）
 
+    /* 1. 先清除指定区域，防止叠加乱码 */
     OLED_ClearArea(X, Y, Width, Height);
 
-    for (j = 0; j < (Height - 1) / 8 + 1; j ++)
+    /* 2. 遍历图像数据的每一个 8 像素切片(Vertical Byte) */
+    for (j = 0; j < ImageRowHeight; j++)
     {
-        for (i = 0; i < Width; i ++)
+        for (i = 0; i < Width; i++)
         {
-            if (X + i >= 0 && X + i <= 127)
+            // 当前处理的显存横坐标
+            int16_t CurrentX = X + i;
+            if (CurrentX < 0 || CurrentX > 127) continue; // 横向越界裁剪
+
+            // 取出源数据中的一字节（8个垂直像素）
+            uint8_t Data = Image[j * Width + i];
+
+            // 计算这一字节数据在屏幕上的实际像素起始 Y 坐标
+            int16_t RealY = Y + (j * 8);
+
+            // 将这 8 位数据拆分映射到显存的 Page 中
+            for (uint8_t bit = 0; bit < 8; bit++)
             {
-                Page = Y / 8;
-                Shift = Y % 8;
-                if (Y < 0)
-                {
-                    Page -= 1;
-                    Shift += 8;
-                }
+                // 检查当前位是否超出了图像实际高度（防止非8倍数高度时的多余位干扰）
+                if ((j * 8 + bit) >= Height) break;
 
-                if (Page + j >= 0 && Page + j <= 7)
-                {
-                    OLED_DisplayBuf[Page + j][X + i] |= Image[j * Width + i] << (Shift);
-                }
+                // 计算当前像素点在屏幕上的绝对 Y 坐标
+                int16_t TargetY = RealY + bit;
 
-                if (Page + j + 1 >= 0 && Page + j + 1 <= 7)
+                // 纵向越界裁剪
+                if (TargetY < 0 || TargetY > 63) continue;
+
+                // 写入显存
+                if (Data & (0x01 << bit))
                 {
-                    OLED_DisplayBuf[Page + j + 1][X + i] |= Image[j * Width + i] >> (8 - Shift);
+                    OLED_DisplayBuf[TargetY / 8][CurrentX] |= (0x01 << (TargetY % 8));
+                }
+                else
+                {
+                    // 注意：由于前面调用了ClearArea，这里通常不需要显式写0
+                    // 如果需要强制覆盖，可以取消下一行的注释
+                    // OLED_DisplayBuf[TargetY / 8][CurrentX] &= ~(0x01 << (TargetY % 8));
                 }
             }
         }
