@@ -46,7 +46,9 @@ static void IRAM_ATTR key_isr_handler(void *arg)
     key_ctx_t *ctx = (key_ctx_t *)arg;
     BaseType_t higher_woken = pdFALSE;
     // 只要有电平变化，就重置定时器（重新触发状态检查）
-    xTimerResetFromISR(ctx->timer, &higher_woken);
+    // 防止在 STATE_WAIT_RELEASE（周期=1000ms）时，松手的上升沿
+    // 被 Reset 成继续等 1000ms 才回调的问题
+    xTimerChangePeriodFromISR(ctx->timer, pdMS_TO_TICKS(KEY_DEBOUNCE_MS), &higher_woken);
     if (higher_woken) portYIELD_FROM_ISR();
 }
 
