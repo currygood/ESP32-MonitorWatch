@@ -9,17 +9,16 @@ typedef enum {
     STATE_IDLE,
     STATE_DEBOUNCE,
     STATE_WAIT_RELEASE,
-    STATE_WAIT_DOUBLE,
+    STATE_RELEASE_WAITED,
 } key_state_t;
 
 typedef struct {
     gpio_num_t    gpio;
     TimerHandle_t timer;
-    
+
     key_state_t   state;
     uint32_t      press_tick;   // 按下时刻
-    uint8_t       click_cnt;    // 点击计数
-    
+
     volatile key_event_t event_flag; // 供轮询模式使用
 } key_ctx_t;
 
@@ -59,7 +58,7 @@ static void key_timer_cb(TimerHandle_t timer)
 
     switch (ctx->state) {
         case STATE_IDLE:
-            if (level == 0) { // 检测到按下
+            if (level == 0) { 
                 ctx->state = STATE_DEBOUNCE;
                 ctx->press_tick = now;
                 xTimerChangePeriod(ctx->timer, pdMS_TO_TICKS(KEY_DEBOUNCE_MS), 0);
@@ -67,9 +66,9 @@ static void key_timer_cb(TimerHandle_t timer)
             break;
 
         case STATE_DEBOUNCE:
-            if (level == 0) { // 消抖通过，确实按下了
+            if (level == 0) { 
                 ctx->state = STATE_WAIT_RELEASE;
-                // 设置定时器在长按阈值后唤醒，用于检测长按
+                // 开始长按监视
                 xTimerChangePeriod(ctx->timer, pdMS_TO_TICKS(KEY_LONG_MS), 0);
             } else {
                 ctx->state = STATE_IDLE;
@@ -77,31 +76,22 @@ static void key_timer_cb(TimerHandle_t timer)
             break;
 
         case STATE_WAIT_RELEASE:
-            if (level == 0) { // 仍然按着
+            if (level == 0) { // 手指还没抬起来
                 if ((now - ctx->press_tick) >= pdMS_TO_TICKS(KEY_LONG_MS)) {
                     trigger_event(ctx, KEY_EVENT_LONG_PRESS);
-                    ctx->state = STATE_IDLE; // 长按触发后需松开才能下一次
+                    // 【关键修改】：进入一个死等松开的状态，防止重复触发
+                    ctx->state = STATE_RELEASE_WAITED;
+                    xTimerChangePeriod(ctx->timer, pdMS_TO_TICKS(50), 0); // 抬手检查频率
                 }
-            } else { // 已松开
-                ctx->click_cnt++;
-                ctx->state = STATE_WAIT_DOUBLE;
-                // 等待一段时间看是否有第二次点击
-                xTimerChangePeriod(ctx->timer, pdMS_TO_TICKS(KEY_DOUBLE_MS), 0);
+            } else { // 提前松开了 -> 判定为单击
+                trigger_event(ctx, KEY_EVENT_SINGLE_CLICK);
+                ctx->state = STATE_IDLE;
+                xTimerStop(ctx->timer, 0); // 停止长按定时器，防止继续检测长按
             }
             break;
 
-        case STATE_WAIT_DOUBLE:
-            if (level == 0) { // 在有效时间内再次按下
-                ctx->click_cnt++;
-                ctx->state = STATE_WAIT_RELEASE;
-                xTimerChangePeriod(ctx->timer, pdMS_TO_TICKS(KEY_LONG_MS), 0);
-            } else { // 超时未再次按下
-                if (ctx->click_cnt >= 2) {
-                    trigger_event(ctx, KEY_EVENT_DOUBLE_CLICK);
-                } else if (ctx->click_cnt == 1) {
-                    trigger_event(ctx, KEY_EVENT_SINGLE_CLICK);
-                }
-                ctx->click_cnt = 0;
+        case STATE_RELEASE_WAITED: // 新增状态
+            if (level == 1) { // 终于松手了
                 ctx->state = STATE_IDLE;
             }
             break;
@@ -111,9 +101,6 @@ static void key_timer_cb(TimerHandle_t timer)
 void Key_Init(key_callback_t cb)
 {
     s_user_cb = cb;
-
-    gpio_install_isr_service(0); // 确保驱动已安装
-
     for (int i = 0; i < KEY_NUM; i++) {
         gpio_config_t cfg = {
             .pin_bit_mask = 1ULL << s_keys[i].gpio,

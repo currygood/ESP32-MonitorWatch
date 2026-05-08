@@ -33,7 +33,31 @@ extern const ChineseCell_t OLED_CF16x16[];
 
 
 /*图像数据声明*/
-extern const unsigned char heart_32x32[256];
+typedef struct{
+	uint8_t width; // 图像宽度，单位为像素
+	uint8_t height; // 图像高度，单位为像素
+	const uint8_t *data; // 图像字模数据指针
+} Image;
+
+
+extern const uint8_t heart_32x32[256];
+
+
+extern const uint8_t battery_pattern_5[19];
+extern const uint8_t battery_pattern_4[19];
+extern const uint8_t battery_pattern_3[19];
+extern const uint8_t battery_pattern_2[19];
+extern const uint8_t battery_pattern_1[19];
+extern Image battery_pattern_5Img;
+extern Image battery_pattern_4Img;
+extern Image battery_pattern_3Img;
+extern Image battery_pattern_2Img;
+extern Image battery_pattern_1Img;
+
+
+
+extern const uint8_t wifiData[];
+extern Image wifiImg;
 
 /*按照上面的格式，在这个位置加入新的图像数据声明*/
 //...

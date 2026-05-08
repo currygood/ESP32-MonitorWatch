@@ -535,33 +535,49 @@ void OLED_ShowFloatNum(int16_t X, int16_t Y, double Number, uint8_t IntLength, u
 
 void OLED_ShowImage(int16_t X, int16_t Y, uint8_t Width, uint8_t Height, const uint8_t *Image)
 {
-    uint8_t i = 0, j = 0;
-    int16_t Page, Shift;
+    int16_t i, j;
+    uint8_t ImageRowHeight = (Height - 1) / 8 + 1; // 图像占用的“页”数（源数据）
 
+    /* 1. 先清除指定区域，防止叠加乱码 */
     OLED_ClearArea(X, Y, Width, Height);
 
-    for (j = 0; j < (Height - 1) / 8 + 1; j ++)
+    /* 2. 遍历图像数据的每一个 8 像素切片(Vertical Byte) */
+    for (j = 0; j < ImageRowHeight; j++)
     {
-        for (i = 0; i < Width; i ++)
+        for (i = 0; i < Width; i++)
         {
-            if (X + i >= 0 && X + i <= 127)
+            // 当前处理的显存横坐标
+            int16_t CurrentX = X + i;
+            if (CurrentX < 0 || CurrentX > 127) continue; // 横向越界裁剪
+
+            // 取出源数据中的一字节（8个垂直像素）
+            uint8_t Data = Image[j * Width + i];
+
+            // 计算这一字节数据在屏幕上的实际像素起始 Y 坐标
+            int16_t RealY = Y + (j * 8);
+
+            // 将这 8 位数据拆分映射到显存的 Page 中
+            for (uint8_t bit = 0; bit < 8; bit++)
             {
-                Page = Y / 8;
-                Shift = Y % 8;
-                if (Y < 0)
-                {
-                    Page -= 1;
-                    Shift += 8;
-                }
+                // 检查当前位是否超出了图像实际高度（防止非8倍数高度时的多余位干扰）
+                if ((j * 8 + bit) >= Height) break;
 
-                if (Page + j >= 0 && Page + j <= 7)
-                {
-                    OLED_DisplayBuf[Page + j][X + i] |= Image[j * Width + i] << (Shift);
-                }
+                // 计算当前像素点在屏幕上的绝对 Y 坐标
+                int16_t TargetY = RealY + bit;
 
-                if (Page + j + 1 >= 0 && Page + j + 1 <= 7)
+                // 纵向越界裁剪
+                if (TargetY < 0 || TargetY > 63) continue;
+
+                // 写入显存
+                if (Data & (0x01 << bit))
                 {
-                    OLED_DisplayBuf[Page + j + 1][X + i] |= Image[j * Width + i] >> (8 - Shift);
+                    OLED_DisplayBuf[TargetY / 8][CurrentX] |= (0x01 << (TargetY % 8));
+                }
+                else
+                {
+                    // 注意：由于前面调用了ClearArea，这里通常不需要显式写0
+                    // 如果需要强制覆盖，可以取消下一行的注释
+                    // OLED_DisplayBuf[TargetY / 8][CurrentX] &= ~(0x01 << (TargetY % 8));
                 }
             }
         }
@@ -943,9 +959,15 @@ void OLED_DrawArc(int16_t X, int16_t Y, uint8_t Radius, int16_t StartAngle, int1
 }
 
 /*********************功能函数*/
+static bool isOLEDShow=false;
+
+void OLED_Notify_Show(bool isShow)
+{
+	isOLEDShow=isShow;
+	// ESP_LOGE("OLED_NOTIFY", "屏幕显示状态切换为: %s", isShow ? "显示" : "隐藏");
+}
 
 // OLED显示任务
-// 修改后的 OLED 显示任务
 void Task_OLED_Show(void *pvParameters)
 {
 	// 1. 基础硬件初始化 (尽快完成)
@@ -959,10 +981,11 @@ void Task_OLED_Show(void *pvParameters)
 		}
 	}
 
-	bool isOLEDShow=false;
+	
 	key_result_t keyGet;
 	// 状态变量
 	float voltage;
+	uint8_t batteryLevel = 0;
 	bool isTimeSynced = false;          // 标记是否已经完成了系统时间->RTC的同步
 	bool isBeginShowBatteryLevel = false;
 	static uint32_t lastBatteryUpdate = 0;
@@ -981,15 +1004,15 @@ void Task_OLED_Show(void *pvParameters)
 			}
 		}
 
-		keyGet = Key_Get();
-		if(keyGet.id == KEY_1)
-		{
-			// 处理按键1的逻辑
-			if(keyGet.event==KEY_EVENT_SINGLE_CLICK)
-				buzzer_off();
-			if(keyGet.event==KEY_EVENT_LONG_PRESS)
-				isOLEDShow=!isOLEDShow;
-		}
+		// keyGet = Key_Get();
+		// if(keyGet.id == KEY_1)
+		// {
+		// 	// 处理按键1的逻辑
+		// 	if(keyGet.event==KEY_EVENT_SINGLE_CLICK)
+		// 		buzzer_off();
+		// 	if(keyGet.event==KEY_EVENT_LONG_PRESS)
+		// 		isOLEDShow=!isOLEDShow;
+		// }
 
 		if(isOLEDShow)
 		{
@@ -1013,23 +1036,25 @@ void Task_OLED_Show(void *pvParameters)
 
 			// 2. 绘制电池电量
 			uint32_t currentTime = xTaskGetTickCount() * portTICK_PERIOD_MS;
-			if (!isBeginShowBatteryLevel || (currentTime - lastBatteryUpdate >= 7000)) {
+			if (lastBatteryUpdate == 0 || (currentTime - lastBatteryUpdate >= 7000)) {
 				Battery_Read_Voltage(&voltage);
-				uint8_t batteryLevel = Battery_Calculate_Percentage(voltage);
-				OLED_ClearArea(99, 0, 24, 8); // 清除电量区域
-				OLED_ShowNum(99, 0, batteryLevel, 3, OLED_6X8);
-				OLED_ShowChar(120, 0, '%', OLED_6X8);
+				batteryLevel = Battery_Calculate_Percentage(voltage);
 				lastBatteryUpdate = currentTime;
-				isBeginShowBatteryLevel = true;
 			}
+			if (batteryLevel >= 80)
+				OLED_ShowImage(99, 0, battery_pattern_5Img.width, battery_pattern_5Img.height, battery_pattern_5Img.data);
+			else if (batteryLevel >= 60)
+				OLED_ShowImage(99, 0, battery_pattern_4Img.width, battery_pattern_4Img.height, battery_pattern_4Img.data);
+			else if (batteryLevel >= 40)
+				OLED_ShowImage(99, 0, battery_pattern_3Img.width, battery_pattern_3Img.height, battery_pattern_3Img.data);
+			else if (batteryLevel >= 20)
+				OLED_ShowImage(99, 0, battery_pattern_2Img.width, battery_pattern_2Img.height, battery_pattern_2Img.data);
+			else
+				OLED_ShowImage(99, 0, battery_pattern_1Img.width, battery_pattern_1Img.height, battery_pattern_1Img.data);
 		
 			// 3. 绘制状态指示 (可选: 提示正在配网)
-			if (!isTimeSynced) {
-				OLED_ShowString(0, 0, "WiFi wait", OLED_6X8);
-			} else {
-				OLED_ClearArea(0, 0, 80, 8); // 对时成功后清除配网提示
-				OLED_ShowString(0, 0, "Online", OLED_6X8);
-			}
+			if (isTimeSynced)
+				OLED_ShowImage(0,0,wifiImg.width, wifiImg.height, wifiImg.data);
 		}
 		else
 		{

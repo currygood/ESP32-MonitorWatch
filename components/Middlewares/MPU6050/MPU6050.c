@@ -4,6 +4,7 @@
 #include <math.h>
 #include "Buzzer.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
 
 
 static const char *TAG = "MPU6050";
@@ -249,9 +250,7 @@ void Task_Mpu6050_Monitor(void *pvParameters) {
 					// 如果蜂鸣器未响，才响
 					if(!isBuzzerOn)
 					{
-						buzzer_on();	//如果心跳过快，蜂鸣器响15秒
-						isBuzzerOn=true;
-						last_buzzer_time = esp_timer_get_time();
+						buzzer_notify_on_from_sensor(); 
 					}
                 }
 
@@ -275,10 +274,5 @@ void Task_Mpu6050_Monitor(void *pvParameters) {
             ESP_LOGE(TAG, "读取原始数据失败: %d", ret);
             vTaskDelay(pdMS_TO_TICKS(50));
         }
-		
-		if (isBuzzerOn && esp_timer_get_time() - last_buzzer_time >= 15000000) {
-			isBuzzerOn = false;
-			buzzer_off(); 
-		}
     }
 }

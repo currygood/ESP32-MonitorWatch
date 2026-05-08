@@ -7,6 +7,7 @@
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
 #include "Buzzer.h"
+#include "freertos/FreeRTOS.h"
 
 
 static const char *TAG = "MAX30102";
@@ -630,30 +631,24 @@ void Task_Max30102_Monitor(void *pvParameters) {
             Max30102_Update_Heart_Rate_Baseline((uint32_t)n_heart_rate);
             bool warning_active = Max30102_Check_Heart_Rate_Warning((uint32_t)n_heart_rate);
             if (warning_active) {
-                ESP_LOGW(TAG, "癫痫早期症状检测: 心率过快! 当前: %ld bpm, 基准: %lu bpm, 阈值: %lu bpm", 
-                         (long)n_heart_rate, Max30102_Get_Heart_Rate_Baseline(), 
+                ESP_LOGW(TAG, "癫痫早期症状检测: 心率过快! 当前: %ld bpm, 基准: %lu bpm, 阈值: %lu bpm",
+                         (long)n_heart_rate, Max30102_Get_Heart_Rate_Baseline(),
                          Max30102_Get_Heart_Rate_Warning_Threshold());
                 if(!isBuzzerOn)
                 {
-                    buzzer_on();
-                    isBuzzerOn=true;
-                    last_buzzer_time = esp_timer_get_time();
-                } 
+                   buzzer_notify_on_from_sensor(); 
+                }
             }
             if (ch_spo2_valid == 1) {
-                Message_Queue_Send_Heart_Rate((uint32_t)n_heart_rate, (uint32_t)n_spo2, 
+                Message_Queue_Send_Heart_Rate((uint32_t)n_heart_rate, (uint32_t)n_spo2,
                                              Max30102_Get_Heart_Rate_Baseline(), warning_active);
             } else {
-                Message_Queue_Send_Heart_Rate((uint32_t)n_heart_rate, 0, 
+                Message_Queue_Send_Heart_Rate((uint32_t)n_heart_rate, 0,
                                              Max30102_Get_Heart_Rate_Baseline(), warning_active);
             }
             if (warning_active) {
                 Message_Queue_Send_Alert(false, false, true);
             }
-        }
-        if (isBuzzerOn && esp_timer_get_time() - last_buzzer_time >= 15000000) {
-            isBuzzerOn = false;
-            buzzer_off();
         }
         vTaskDelay(pdMS_TO_TICKS(100));
     }

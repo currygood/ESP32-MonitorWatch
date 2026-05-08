@@ -50,6 +50,6 @@ void Mpu6050_Clear_Flag(void);
 void Mpu6050_Get_Accel_Data(int16_t *ax, int16_t *ay, int16_t *az);
 void Mpu6050_Get_Gyro_Data(int16_t *gx, int16_t *gy, int16_t *gz);
 
-void Task_Mpu6050_Monitor(void *pvParameters);
+void Task_Mpu6050_Monitor(void *pvParameters);  // pvParameters = TaskHandle_t (Buzzer任务句柄)
 
 #endif // MPU6050_H

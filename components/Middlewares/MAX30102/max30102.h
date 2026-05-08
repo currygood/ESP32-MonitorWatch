@@ -63,7 +63,7 @@ void Max30102_Algorithm_Calculate(uint32_t *ir_buffer, int32_t buffer_len, uint3
                                   int32_t *heart_rate, int8_t *hr_valid);
 
 // --- 监测任务 ---
-void Task_Max30102_Monitor(void *pvParameters);
+void Task_Max30102_Monitor(void *pvParameters);  // pvParameters = TaskHandle_t (Buzzer任务句柄)
 
 
 // --- 数据输出 ---
