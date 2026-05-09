@@ -7,10 +7,10 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "rtc_driver.h"
-#include <time.h>
 #include "GetBaLevel.h"
 #include "Key.h"
 #include "Buzzer.h"
+#include "mqtt.h"
 
 static const char *TAG = "OLED";
 
@@ -1096,11 +1096,11 @@ void Task_OLED_Show(void *pvParameters)
 		}
 	}
 
-	
+
 	// 状态变量
 	float voltage;
 	uint8_t batteryLevel = 0;
-	bool isTimeSynced = false;          // 标记是否已经完成了系统时间->RTC的同步
+	static bool isTimeSynced = false; // 标记是否已成功对时
 	static uint32_t lastBatteryUpdate = 0;
 
 	while(1)
@@ -1160,8 +1160,10 @@ void Task_OLED_Show(void *pvParameters)
 					OLED_ShowImage(99, 0, battery_pattern_1Img.width, battery_pattern_1Img.height, battery_pattern_1Img.data);
 			
 				// 3. 绘制状态指示 (可选: 提示正在配网)
-				if (isTimeSynced)
+				if (MQTT_Is_Connected())
 					OLED_ShowImage(0,0,wifiImg.width, wifiImg.height, wifiImg.data);
+				else
+					OLED_ClearArea(0, 0, wifiImg.width, wifiImg.height);
 			}
 			else if(OLED_ShowState == 2)
 			{

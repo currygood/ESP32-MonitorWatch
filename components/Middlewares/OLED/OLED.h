@@ -80,6 +80,8 @@ void OLED_DrawArc(int16_t X, int16_t Y, uint8_t Radius, int16_t StartAngle, int1
 
 
 //freertos 任务函数
+void OLED_Set_ShowState(uint8_t state);
+void OLED_Notify_Show(bool isShow);
 void Task_OLED_Show(void *pvParameters);
 
 
