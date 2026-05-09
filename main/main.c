@@ -15,7 +15,11 @@
 #include "GetBaLevel.h"
 #include "Buzzer.h"
 #include "Key.h"
-#include "UI_Events.h"
+
+void My_Key_Callback(key_id_t id, key_event_t event);
+
+// 全局变量
+TaskHandle_t Buzzer_Task_Handle = NULL;  // 真正的定义，分配内存空间
 
 void app_main(void) 
 {
@@ -51,32 +55,48 @@ void app_main(void)
 
 	//获取电池电量初始化
 	Battery_Level_Init();
-	
-	//初始化按键
-	Key_Init();
 
 	// 初始化蜂鸣器
 	buzzer_init(BUZZER_GPIO_NUM, BUZZER_FREQ_HZ);
 
-	vTaskDelay(pdMS_TO_TICKS(500)); 	//等待500ms，确保I2C总线和MessageQueue等设备初始化完成
-	// 1. 创建 UI 消息队列 (容量10，存 ui_command_t)
-    QueueHandle_t ui_msg_queue = xQueueCreate(10, sizeof(ui_command_t));
-    // 2. 创建按键逻辑任务，把队列句柄传进去
-    
-	// 创建任务
-	// xTaskCreate(Task_Max30102_Monitor, "Task_Max30102_Monitor", 4096, NULL, 3, NULL);
-	// xTaskCreate(Task_Mpu6050_Monitor, "Task_Mpu6050_Monitor", 4096, NULL, 3, NULL);
-	// xTaskCreate(Task_MQTT_Message_Handler,"Task_MQTT_Message_Handler",10240 ,NULL,3,NULL);
-	// xTaskCreate(Task_OLED_Show,"Task_OLED_Show",8192 ,NULL,2,NULL);
-	// xTaskCreate(Task_Buzzer,"Task_Buzzer",1024 ,NULL,3,NULL);
+	// 按键初始化
+	Key_Init(My_Key_Callback); // 传入 NULL 使用轮询模式，后续通过 Key_Get() 获取按键事件
 
+	vTaskDelay(pdMS_TO_TICKS(500)); 	//等待500ms，确保I2C总线和MessageQueue等设备初始化完成
+
+	// 创建任务
+	xTaskCreatePinnedToCore(Task_Buzzer, "Buzzer_Task", 2048, NULL, 2, &Buzzer_Task_Handle,0); // 创建蜂鸣器任务并保存句柄
 	xTaskCreatePinnedToCore(Task_MQTT_Message_Handler, "MQTT_Task", 10240, NULL, 3, NULL, 0); 
-	xTaskCreatePinnedToCore(Task_Max30102_Monitor, "Sensor_Task", 4096, NULL, 5, NULL, 1);
-	xTaskCreatePinnedToCore(Task_Mpu6050_Monitor, "MPU6050_Task", 4096, NULL, 5, NULL, 1);
-	xTaskCreatePinnedToCore(Task_OLED_Show, "Task_OLED_Show", 10240, (void*)ui_msg_queue, 2, NULL, 1);
-	xTaskCreatePinnedToCore(Task_Buzzer,"Task_Buzzer",2048,NULL,1,NULL,0);
-	xTaskCreatePinnedToCore(Task_Key_Processor, "Key_Proc", 3072, (void*)ui_msg_queue, 4, NULL, 1);
-	
+	xTaskCreatePinnedToCore(Task_Max30102_Monitor, "max30102_Task", 4096, (void *)Buzzer_Task_Handle, 5, NULL, 1);
+	xTaskCreatePinnedToCore(Task_Mpu6050_Monitor, "MPU6050_Task", 4096, (void *)Buzzer_Task_Handle, 5, NULL, 1);
+	xTaskCreatePinnedToCore(Task_OLED_Show, "Task_OLED_Show", 10240, NULL, 2, NULL, 1);
+
 	// 短暂延迟确保任务启动，然后让app_main自然结束
     vTaskDelay(pdMS_TO_TICKS(100));
+}
+
+// 定义全局回调
+static bool isOLEDShow = false;
+static uint8_t OLED_ShowState = 1; // 1: 默认显示时间和电量；2: 显示心率和血氧
+
+void My_Key_Callback(key_id_t id, key_event_t event) {
+    if (id == KEY_1) {
+        if (event == KEY_EVENT_SINGLE_CLICK) {
+            buzzer_notify_off_from_key(); // 通过任务通知关闭蜂鸣器
+        }
+		if(event == KEY_EVENT_LONG_PRESS) {
+			// 长按切换OLED显示状态
+			isOLEDShow = !isOLEDShow;
+			OLED_Notify_Show(isOLEDShow);
+		}
+    }
+	if(id == KEY_2) {
+		if(event == KEY_EVENT_SINGLE_CLICK) {
+			// 如果OLED是打开的，那切换显示内容
+			if(isOLEDShow) {
+				OLED_ShowState = OLED_ShowState==1 ? 2 : 1; // 切换状态
+				OLED_Set_ShowState(OLED_ShowState);
+			}
+		}
+	}
 }

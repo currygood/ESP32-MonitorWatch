@@ -196,6 +196,7 @@ void Task_Mpu6050_Monitor(void *pvParameters) {
 	vTaskDelay(pdMS_TO_TICKS(100));	// 等待初始化完成
 
     int16_t ax, ay, az, gx, gy, gz;
+	static bool isBuzzerOn = false;
 
     ESP_LOGI(TAG, "Monitor task started");
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -244,11 +245,13 @@ void Task_Mpu6050_Monitor(void *pvParameters) {
                     ESP_LOGW(TAG, "ALARM! 可能癫痫抽搐或跌倒事件");
                     // 通过消息队列发送跌倒/抽搐预警
                     Message_Queue_Send_Alert(true, true, false);
-					// 如果当前蜂鸣器没在响，才触发开启
-					Buzzer_Trigger_Alarm(true);
-                } else {
-					Buzzer_Trigger_Alarm(false);
+					// 如果蜂鸣器未响，才响
+					if(!isBuzzerOn)
+					{
+						buzzer_notify_on_from_sensor(); 
+					}
                 }
+
                 int32_t sum_ax = 0, sum_ay = 0, sum_az = 0;
                 for (int i = 0; i < MPU6050_BUFFER_SIZE; i++) {
                     sum_ax += ax_buffer[i];
@@ -263,6 +266,7 @@ void Task_Mpu6050_Monitor(void *pvParameters) {
 
                 buffer_idx = 0;
             }
+
             vTaskDelay(pdMS_TO_TICKS(1000 / MPU6050_SAMPLES_PER_SEC));
         } else {
             ESP_LOGE(TAG, "读取原始数据失败: %d", ret);

@@ -36,16 +36,9 @@ typedef struct {
     key_event_t event;
 } key_result_t;
 
-/**
- * @brief 初始化按键模块
- */
-void Key_Init(void);
+typedef void (*key_callback_t)(key_id_t id, key_event_t event);
 
-/**
- * @brief 从队列获取按键事件（多任务安全，不丢失）
- * @param res 结果存储指针
- * @param wait_ms 等待超时。0则立即返回，portMAX_DELAY则永久等待
- */
-bool Key_Get_Event(key_result_t *res, uint32_t wait_ms);
+void Key_Init(key_callback_t cb);
+key_result_t Key_Get(void);
 
 #endif

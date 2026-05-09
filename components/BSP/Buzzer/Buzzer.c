@@ -1,78 +1,99 @@
 #include "Buzzer.h"
-#include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include "esp_timer.h"
+#include "driver/gpio.h"
+#include "freertos/timers.h"
 
-static const char* TAG = "Buzzer";
 static int s_buzzer_gpio = -1;
-static bool s_is_muted = false;      // 按键按下的静音锁定
-static bool s_is_running = false;    // 当前是否正在响
-static TaskHandle_t s_buzzer_task_handle = NULL;
+static bool s_can_enable = true;      // 是否允许开启（冷却标志）
+static TimerHandle_t s_lockout_timer = NULL;
 
-// 硬件底层
-static void buzzer_hw_on() { if (s_buzzer_gpio != -1) gpio_set_level(s_buzzer_gpio, 0); }
-static void buzzer_hw_off() { if (s_buzzer_gpio != -1) gpio_set_level(s_buzzer_gpio, 1); }
+// 定义内部使用的指令（增加一个自动结束指令）
+typedef enum {
+    CMD_ON = 1,          // 传感器触发：开启
+    CMD_OFF_MANUAL = 2,  // 按键触发：手动关闭
+    CMD_OFF_AUTO = 3     // 定时器触发：15秒到期自动关闭
+} buzzer_internal_msg_t;
+
+// 定时器回调函数：15秒时间到
+static void lockout_timer_callback(TimerHandle_t timer) {
+    // 15秒到了，向任务发送“自动关闭”通知
+    if (Buzzer_Task_Handle != NULL) {
+        xTaskNotify(Buzzer_Task_Handle, CMD_OFF_AUTO, eSetValueWithOverwrite);
+    }
+}
 
 esp_err_t buzzer_init(int gpio_buzze_Pin, int freq_hz) {
     s_buzzer_gpio = gpio_buzze_Pin;
-    gpio_config_t io_conf = {.pin_bit_mask = (1ULL << s_buzzer_gpio), .mode = GPIO_MODE_OUTPUT, .pull_up_en = GPIO_PULLUP_ENABLE};
+    gpio_config_t io_conf = {
+        .intr_type = GPIO_INTR_DISABLE,
+        .mode = GPIO_MODE_OUTPUT,
+        .pin_bit_mask = (1ULL << s_buzzer_gpio),
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .pull_up_en = GPIO_PULLUP_DISABLE
+    };
     gpio_config(&io_conf);
-    buzzer_hw_off();
+    
+    gpio_set_level(s_buzzer_gpio, 1); // 默认关闭（高电平）
+
+    // 创建单次定时器（15秒）
+    s_lockout_timer = xTimerCreate("BuzzerLock", pdMS_TO_TICKS(BUZZER_ON_LOCKOUT_MS), 
+                                   pdFALSE, NULL, lockout_timer_callback);
     return ESP_OK;
 }
 
-// 供传感器调用的接口
-void Buzzer_Trigger_Alarm(bool enable) {
-    if (s_buzzer_task_handle == NULL) return;
-    if (enable) {
-        // 只有没被静音 且 当前没在响，才启动
-        if (!s_is_muted && !s_is_running) {
-            xTaskNotify(s_buzzer_task_handle, 1, eSetValueWithOverwrite);
-        }
-    } else {
-        // 如果传感器指示恢复正常，解除静音锁定，允许下一次异常时报警
-        s_is_muted = false;
-        // 如果正在响，就停掉
-        if (s_is_running) xTaskNotify(s_buzzer_task_handle, 0, eSetValueWithOverwrite);
+// 供传感器调用的通知
+void buzzer_notify_on_from_sensor(void) {
+    if (Buzzer_Task_Handle != NULL) {
+        xTaskNotify(Buzzer_Task_Handle, CMD_ON, eSetValueWithOverwrite);
     }
 }
 
-// 供按键调用的接口：立刻闭嘴并进入静音锁定
-void Buzzer_Set_Mute(bool mute) {
-    s_is_muted = mute;
-    if (mute && s_is_running) {
-        xTaskNotify(s_buzzer_task_handle, 0, eSetValueWithOverwrite);
+// 供按键调用的通知
+void buzzer_notify_off_from_key(void) {
+    if (Buzzer_Task_Handle != NULL) {
+        xTaskNotify(Buzzer_Task_Handle, CMD_OFF_MANUAL, eSetValueWithOverwrite);
     }
 }
 
-// 获取状态（兼容你原来的逻辑）
-bool Buzzer_Get_Finish(void) { return !s_is_running; }
-
-void Task_Buzzer(void *pvParameters) {
-    s_buzzer_task_handle = xTaskGetCurrentTaskHandle();
-    uint32_t notifyValue;
-
-    while (1) {
-        // 1. 阻塞等待“开始报警”指令 (notifyValue == 1)
-        if (xTaskNotifyWait(0, ULONG_MAX, &notifyValue, portMAX_DELAY) == pdTRUE) {
+// 蜂鸣器主任务
+void Task_Buzzer(void *pvParameters) 
+{
+    uint32_t received_cmd;
+	
+    while (1) 
+	{
+        // 等待通知，portMAX_DELAY 表示一直等待直到有消息
+        // 【注意】这里不要加 vTaskDelay
+        if (xTaskNotifyWait(0, 0xFFFFFFFF, &received_cmd, portMAX_DELAY) == pdPASS) 
+		{
             
-            if (notifyValue == 1) { 
-                s_is_running = true;
-                buzzer_hw_on();  // 开启蜂鸣器，长鸣
-                ESP_LOGI(TAG, "报警启动：长鸣模式 (最多15秒)");
+            switch (received_cmd) 
+			{
+                case CMD_ON:
+                    if (s_can_enable) {
+                        gpio_set_level(s_buzzer_gpio, 0); // 响
+                        s_can_enable = false;             // 进入冷却锁定
+                        xTimerStart(s_lockout_timer, 0);  // 开启15秒计时
+					}
+                	// ESP_LOGW(TAG, ">>> 报警开启，锁定15秒");
+                    //else {
+                    //     ESP_LOGI(TAG, "冷却中，忽略开启指令");
+                    // }
+                    break;
 
-                // 2. 关键点：等待“停止信号”(0)，但只等 15 秒
-                // 如果 15 秒内收到了信号（如按键按下的 0），函数会立刻返回 pdTRUE
-                // 如果 15 秒内啥也没收到，函数会因为超时返回 pdFALSE
-                // 无论哪种情况，都会执行下面的 hw_off
-                xTaskNotifyWait(0, ULONG_MAX, &notifyValue, pdMS_TO_TICKS(15000));
+                case CMD_OFF_MANUAL:
+                    gpio_set_level(s_buzzer_gpio, 1); // 关
+                    // ESP_LOGI(TAG, ">>> 按键手动关闭 (冷却继续有效)");
+                    // 注意：这里不需要停止定时器，s_can_enable 保持 false 直到定时器回调
+                    break;
 
-                buzzer_hw_off(); // 停止响声
-                s_is_running = false;
-                ESP_LOGI(TAG, "报警结束");
-                
-                // 3. 强行清除一次可能存在的残留通知，防止连续触发
-                xTaskNotifyStateClear(NULL);
+                case CMD_OFF_AUTO:
+                    gpio_set_level(s_buzzer_gpio, 1); // 关
+                    s_can_enable = true;              // 15秒到，解锁冷却
+                    // ESP_LOGI(TAG, ">>> 15秒到期：自动关闭并解除锁定");
+                    break;
+
+                default:
+                    break;
             }
         }
     }
