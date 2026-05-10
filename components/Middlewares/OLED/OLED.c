@@ -1061,11 +1061,13 @@ static void OLED_Show_HR_OxygenPage(void)
 
         // 左侧：心率盘 (0-200)
         // 圆心(32, 32), 半径20
+		if(display_hr > 200) display_hr = 200; // 限制心率最大值，防止指针飞出表盘
 		OLED_ClearArea(0, 0, 64, 64); // 每次更新前清除对应区域，防止指针重叠产生的残影
         OLED_DrawMeter(32, 32, 20, display_hr, 200, "H-R", "bpm");
 
         // 右侧：血氧盘 (0-100)
         // 圆心(96, 32), 半径20
+		if(display_spo2 > 100) display_spo2 = 100; // 限制血氧最大值，防止指针飞出表盘
 		OLED_ClearArea(64, 0, 64, 64); // 每次更新前清除对应区域，防止指针重叠产生的残影
         OLED_DrawMeter(96, 32, 20, display_spo2, 100, "O-2", "%");
 
@@ -1079,6 +1081,7 @@ static void OLED_Show_HR_OxygenPage(void)
 		else if(!isOLEDShow) {
 			return ;
 		}
+		vTaskDelay(pdMS_TO_TICKS(10000)); // 每10000ms更新一次
     }
 }
 
