@@ -14,13 +14,13 @@
 
 static const char *TAG = "OLED";
 
-/* OLED I2C 从机地址（7-bit 左移1位 = 0x78），WriteCommand/WriteData 中使用控制字节 */
-#define OLED_I2C_ADDR   0x3C    /* 7-bit 地址，与 I2c_Add_Device() 的 dev_addr 一致 */
+
+/*全局变量*********************/
+static bool isOLEDShow=false;	// OLED显示状态通知标志位
+static uint8_t OLED_ShowState=1; //  1: 默认显示时间和电量；2: 显示心率和血氧
 
 /* I2C 设备句柄，由 OLED_Init() 保存 */
 static i2c_master_dev_handle_t oled_dev = NULL;
-
-/*全局变量*********************/
 
 /**
  * OLED显存数组
@@ -157,8 +157,9 @@ esp_err_t OLED_Init(i2c_master_bus_handle_t bus_handle)
 	OLED_WriteCommand(0x8D); // 设置电荷泵
 	OLED_WriteCommand(0x14);
 
-	// 打开OLED显示
-	OLED_WriteCommand(0xAF); // 打开显示
+	// // 打开OLED显示
+	// 低功耗设计，先不打开显示，等需要显示时再打开
+	// OLED_WriteCommand(0xAF); // 打开显示
 
 	// 清除OLED屏幕
 	OLED_Clear(); // OLED清屏
@@ -1024,14 +1025,10 @@ void OLED_DrawMeter(int cx, int cy, int r, int value, int max_value, char *label
     OLED_ShowString(cx - str_width / 2, cy + r + 5, buf, OLED_6X8);
 }
 
-static uint8_t OLED_ShowState=1; //  1: 默认显示时间和电量；2: 显示心率和血氧
-
 void OLED_Set_ShowState(uint8_t state)
 {
 	OLED_ShowState = state;
 }
-
-static bool isOLEDShow=false;
 
 void OLED_Notify_Show(bool isShow)
 {
@@ -1081,30 +1078,39 @@ static void OLED_Show_HR_OxygenPage(void)
 		else if(!isOLEDShow) {
 			return ;
 		}
-		vTaskDelay(pdMS_TO_TICKS(10000)); // 每10000ms更新一次
+		// 每10000ms更新一次  这个阻塞着了，单击key2切换显示状态的时候，会阻塞10秒才能退出，不行
+		vTaskDelay(pdMS_TO_TICKS(10000)); 
     }
 }
 
 // OLED显示任务
 void Task_OLED_Show(void *pvParameters)
 {
-	// 1. 基础硬件初始化 (尽快完成)
+	// // 1. 基础硬件初始化 (尽快完成)
 	i2c_master_bus_handle_t i2c_bus = I2c_Get_Global_Bus_Handle();
 	if (i2c_bus != NULL) {
 		if (OLED_Init(i2c_bus) == ESP_OK) {
+			ESP_LOGI("OLED", "OLED初始化成功");
 			OLED_Clear();
 			OLED_Update();
 		} else {
 			ESP_LOGE("OLED", "OLED初始化失败");
 		}
+	} else {
+		ESP_LOGE("OLED", "I2C总线句柄为空，无法初始化OLED");
 	}
 
 
-	// 状态变量
+	// 变量
 	float voltage;
 	uint8_t batteryLevel = 0;
 	static bool isTimeSynced = false; // 标记是否已成功对时
 	static uint32_t lastBatteryUpdate = 0;
+	Sensor_Message_t msg;
+    QueueHandle_t oled_q = Message_Queue_Get_Handle(QUEUE_TYPE_OLED);
+    // 设置默认值，防止队列为空时显示随机数
+    uint32_t display_hr = 0;
+    uint32_t display_spo2 = 0;
 
 	while(1)
 	{
@@ -1124,6 +1130,8 @@ void Task_OLED_Show(void *pvParameters)
 
 		if(isOLEDShow)
 		{
+			OLED_WriteCommand(0xAF); // 开启显示
+			OLED_Clear(); // 每次进入显示循环时先清屏，防止残影
 			if(OLED_ShowState == 1)
 			{
 				// --- B. 屏幕内容绘制 ---
@@ -1131,8 +1139,8 @@ void Task_OLED_Show(void *pvParameters)
 				if (Rtc_Is_Initialized()) {
 					rtc_time_t current_time;
 					if (Rtc_Get_Time(&current_time) == ESP_OK) {
-						// 清除时间区域并绘制（居中显示）
-						OLED_ClearArea(0, 20, 128, 24);
+						// // 清除时间区域并绘制（居中显示）
+						// OLED_ClearArea(0, 20, 128, 24);
 						// 格式 HH:MM:SS (12x24 字体)
 						OLED_ShowNum(16, 20, current_time.hours, 2, OLED_12X24);
 						OLED_ShowChar(40, 20, ':', OLED_12X24);
@@ -1170,12 +1178,31 @@ void Task_OLED_Show(void *pvParameters)
 			}
 			else if(OLED_ShowState == 2)
 			{
-				OLED_Show_HR_OxygenPage();
+				// 非阻塞或极短时间阻塞获取最新数据
+				if (oled_q != NULL && xQueueReceive(oled_q, &msg, 0) == pdPASS) {
+					if (msg.Message_Type == MESSAGE_TYPE_HEART_RATE_SPO2) {
+						display_hr = msg.Data.Heart_Rate_SPO2_Data.Heart_Rate;
+						display_spo2 = msg.Data.Heart_Rate_SPO2_Data.SpO2;
+					}
+				}
+
+				// 左侧：心率盘 (0-200)
+				// 圆心(32, 32), 半径20
+				if(display_hr > 200) display_hr = 200; // 限制心率最大值，防止指针飞出表盘
+				OLED_ClearArea(0, 0, 64, 64); // 每次更新前清除对应区域，防止指针重叠产生的残影
+				OLED_DrawMeter(32, 32, 20, display_hr, 200, "H-R", "bpm");
+
+				// 右侧：血氧盘 (0-100)
+				// 圆心(96, 32), 半径20
+				if(display_spo2 > 100) display_spo2 = 100; // 限制血氧最大值，防止指针飞出表盘
+				OLED_ClearArea(64, 0, 64, 64); // 每次更新前清除对应区域，防止指针重叠产生的残影
+				OLED_DrawMeter(96, 32, 20, display_spo2, 100, "O-2", "%");
 			}
 		}
 		else
 		{
 			OLED_Clear();
+			OLED_WriteCommand(0xAE);	// 关闭显示
 		}
 
 		// --- C. 更新显示并休眠 ---
@@ -1184,98 +1211,3 @@ void Task_OLED_Show(void *pvParameters)
 		vTaskDelay(pdMS_TO_TICKS(200)); // 适当降低频率减少闪烁，200ms对秒表显示足够
 	}
 }
-// void Task_OLED_Show(void *pvParameters)
-// {
-//     i2c_master_bus_handle_t i2c_bus = I2c_Get_Global_Bus_Handle();
-//     OLED_Init(i2c_bus);
-
-//     bool display_on = true;
-//     oled_page_t current_page = PAGE_MAIN;
-//     ui_command_t received_cmd;
-    
-//     // 状态变量
-//     float voltage;
-//     uint8_t batteryLevel = 0; // 缓存电量数值
-//     bool isTimeSynced = false;
-//     static uint32_t lastBatteryUpdate = 0;
-    
-//     QueueHandle_t cmd_queue = (QueueHandle_t)pvParameters;
-
-//     while (1) {
-//         // --- 1. 处理指令 ---
-//         if (xQueueReceive(cmd_queue, &received_cmd, 0) == pdPASS) {
-//             switch (received_cmd) {
-//                 case UI_CMD_TOGGLE_POWER: display_on = !display_on; break;
-//                 case UI_CMD_SWITCH_PAGE:  current_page = (current_page == PAGE_MAIN) ? PAGE_SENSOR : PAGE_MAIN; break;
-//                 default: break;
-//             }
-//         }
-
-//         if (!display_on) {
-//             OLED_Clear();
-//             OLED_Update();
-//             vTaskDelay(pdMS_TO_TICKS(200));
-//             continue;
-//         }
-
-//         // --- 2. 只有时间到了才去真正的读ADC (省电/减小干扰) ---
-//         uint32_t currentTime = xTaskGetTickCount() * portTICK_PERIOD_MS;
-//         if (lastBatteryUpdate == 0 || (currentTime - lastBatteryUpdate >= 7000)) {
-//             Battery_Read_Voltage(&voltage);
-//             batteryLevel = Battery_Calculate_Percentage(voltage);
-//             lastBatteryUpdate = currentTime;
-//         }
-
-//         // --- 3. 开始渲染 (每一帧都要画，因为开头有Clear) ---
-//         OLED_Clear(); 
-
-//         if (current_page == PAGE_SENSOR) {
-//             // 传感器页面绘制...
-//             OLED_DrawMeter(32, 32, 20, 75, 200, "H-R", "bpm");
-//             OLED_DrawMeter(96, 32, 20, 98, 100, "O-2", "%");
-//         } 
-//         else {
-//             // 主页面绘制
-//             // A. 时间逻辑...
-//             if (!isTimeSynced) {
-//                 time_t now = time(NULL);
-//                 if (now > 1704067200LL) {
-//                     if (Rtc_Set_From_Unix((uint32_t)now) == ESP_OK) isTimeSynced = true;
-//                 }
-//             }
-
-//             // B. 画时间
-//             if (Rtc_Is_Initialized()) {
-//                 rtc_time_t current_time;
-//                 if (Rtc_Get_Time(&current_time) == ESP_OK) {
-//                     OLED_ShowNum(16, 20, current_time.hours, 2, OLED_12X24);
-//                     OLED_ShowChar(40, 20, ':', OLED_12X24);
-//                     OLED_ShowNum(52, 20, current_time.minutes, 2, OLED_12X24);
-//                     OLED_ShowChar(76, 20, ':', OLED_12X24);
-//                     OLED_ShowNum(88, 20, current_time.seconds, 2, OLED_12X24);
-//                 }
-//             }
-
-//             // C. 每一帧都把缓存的 batteryLevel 画出来
-// 			if(batteryLevel <= 100 && batteryLevel >= 80)
-// 				OLED_ShowImage(99,0,battery_pattern_5Img.width, battery_pattern_5Img.height, battery_pattern_5Img.data);
-//             else if(batteryLevel < 80 && batteryLevel >= 60)
-// 				OLED_ShowImage(99,0,battery_pattern_4Img.width, battery_pattern_4Img.height, battery_pattern_4Img.data);
-//             else if(batteryLevel < 60 && batteryLevel >= 40)
-// 				OLED_ShowImage(99,0,battery_pattern_3Img.width, battery_pattern_3Img.height, battery_pattern_3Img.data);
-// 			else if(batteryLevel < 40 && batteryLevel >= 20)
-// 				OLED_ShowImage(99,0,battery_pattern_2Img.width, battery_pattern_2Img.height, battery_pattern_2Img.data);
-// 			else if(batteryLevel < 20 && batteryLevel >= 0)
-// 				OLED_ShowImage(99,0,battery_pattern_1Img.width, battery_pattern_1Img.height, battery_pattern_1Img.data);
-
-//             // D. 画状态
-// 			if(isTimeSynced)	
-// 				OLED_ShowImage(0, 0, wifiImg.width, wifiImg.height, wifiImg.data);
-// 			else
-// 				OLED_ClearArea(0, 0, wifiImg.width, wifiImg.height);
-//         }
-        
-//         OLED_Update();
-//         vTaskDelay(pdMS_TO_TICKS(200)); 
-//     }
-// }

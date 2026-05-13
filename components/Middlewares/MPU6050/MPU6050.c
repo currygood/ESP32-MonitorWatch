@@ -28,10 +28,9 @@ static int16_t az_buffer[MPU6050_BUFFER_SIZE];
 static int buffer_idx = 0;
 
 // 初始化
-void Mpu6050_Init(void) {
-    i2c_master_bus_handle_t i2c_bus = I2c_Get_Global_Bus_Handle();
+void Mpu6050_Init(i2c_master_bus_handle_t bus_handle) {
     // 添加 MPU6050 设备
-    ESP_ERROR_CHECK(I2c_Add_Device(i2c_bus, MPU6050_ADDR, MPU6050_I2C_FREQ, &mpu6050_dev));
+    ESP_ERROR_CHECK(I2c_Add_Device(bus_handle, MPU6050_ADDR, MPU6050_I2C_FREQ, &mpu6050_dev));
 
     ESP_LOGI(TAG, "MPU6050 设备添加成功");
 
@@ -192,13 +191,17 @@ void Task_Mpu6050_Monitor(void *pvParameters) {
     esp_log_level_set("gpio", ESP_LOG_ERROR);
     esp_log_level_set("i2c", ESP_LOG_ERROR);
 
-	Mpu6050_Init();
-	vTaskDelay(pdMS_TO_TICKS(100));	// 等待初始化完成
+	// Mpu6050_Init(i2c_bus);	// 注意：MPU6050初始化已在main.c中完成，这里不再重复初始化
+	// vTaskDelay(pdMS_TO_TICKS(100));	// 等待初始化完成
 
     int16_t ax, ay, az, gx, gy, gz;
 	static bool isBuzzerOn = false;
 
     ESP_LOGI(TAG, "Monitor task started");
+
+	//初始化
+	i2c_master_bus_handle_t i2c_bus = I2c_Get_Global_Bus_Handle();
+	Mpu6050_Init(i2c_bus);
     vTaskDelay(pdMS_TO_TICKS(100));
 
     uint8_t who_am_i = 0;

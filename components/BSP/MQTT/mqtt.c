@@ -435,6 +435,7 @@ static esp_err_t start_ble_provisioning(void)
         }
 
         ESP_LOGW(TAG, "✅ 配网完成，凭据已写入 NVS");
+        ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MIN_MODEM));
         return ESP_OK;
     } else {
         ESP_LOGE(TAG, "❌ BLE 配网超时（%d 秒），改用默认凭据", BLE_PROV_TIMEOUT_MS / 1000);
@@ -500,6 +501,7 @@ esp_err_t Wifi_Init(void)
                                                    pdMS_TO_TICKS(30000));
             if (bits & WIFI_CONNECTED_BIT) {
                 ESP_LOGW(TAG, ">>> WiFi 连接成功（NVS 凭据）");
+                ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MIN_MODEM));
                 return ESP_OK;
             } else {
                 ESP_LOGE(TAG, "WiFi 连接超时（NVS 凭据失效？）或者未开启wifi");

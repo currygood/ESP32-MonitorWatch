@@ -12,5 +12,8 @@
     "--background-index",
     "--query-driver=**",
     "--compile-commands-dir=f:\\Esp32\\Code\\Watch\\ESP32-MonitorWatch\\build"
-  ]
+],
+"idf.espIdfPathWin": "f:\\esp-idf\\v5.2.6\\esp-idf",
+"idf.toolsPathWin": "f:\\esp_tool",
+"idf.pythonInstallPath": "f:\\esp_tool\\tools\\idf-python\\3.11.2\\python.exe"
 }

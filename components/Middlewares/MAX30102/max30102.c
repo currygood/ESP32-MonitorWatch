@@ -46,8 +46,11 @@ void Max30102_Init(i2c_master_bus_handle_t bus_handle) {
     Max30102_Write_Reg(REG_FIFO_CONFIG, 0x0F);
     Max30102_Write_Reg(REG_MODE_CONFIG, 0x03);
     Max30102_Write_Reg(REG_SPO2_CONFIG, 0x27);
-    Max30102_Write_Reg(REG_LED1_PA, 0x24);
-    Max30102_Write_Reg(REG_LED2_PA, 0x24);
+	// Max30102_Write_Reg(REG_LED1_PA, 0x24);
+    // Max30102_Write_Reg(REG_LED2_PA, 0x24);
+	// 降低LED亮度省电
+    Max30102_Write_Reg(REG_LED1_PA, 0x1C);
+    Max30102_Write_Reg(REG_LED2_PA, 0x1C);
     Max30102_Write_Reg(REG_PILOT_PA, 0x7f);
 }
 
@@ -535,7 +538,8 @@ void Task_Max30102_Monitor(void *pvParameters) {
 	static bool isBuzzerOn = false;
     
     ESP_LOGI(TAG, "Monitor task started");
-    
+
+	//初始化
 	i2c_master_bus_handle_t i2c_bus = I2c_Get_Global_Bus_Handle();
     if (i2c_bus == NULL) {
         ESP_LOGE(TAG, "无法获取I2C总线句柄");

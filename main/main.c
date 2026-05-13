@@ -37,10 +37,11 @@ void app_main(void)
 		ESP_LOGE("APP_MAIN", "I2C总线初始化失败");
 		return;
 	}
-	
 	// 整个程序只在这里写一次！
-    ESP_ERROR_CHECK(gpio_install_isr_service(0)); 
+    ESP_ERROR_CHECK(gpio_install_isr_service(0));  
     // ESP_LOGI("APP_MAIN", "GPIO ISR 服务安装成功");  //成功就不管，没必要输出了
+
+	vTaskDelay(pdMS_TO_TICKS(500));
 
 	// 初始化消息队列
 	if (!Message_Queue_Init()) {
