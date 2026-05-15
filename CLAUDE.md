@@ -12,14 +12,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - MQTT数据实时上报，不可延迟/打包
 - OLED显示实时更新
 
+## 开发分支策略
+
+**main** - 主分支，生产就绪状态
+**EmbeddedGame** - 当前开发分支（癫痫监测游戏化）
+**MAX30102** - MAX30102传感器相关改进
+**GDDesignedGame** - 完整游戏化设计分支
+
+开发新功能时：
+1. 从对应特性分支创建新分支（如 EmbeddedGame）
+2. 开发完成后合并回主分支
+3. 重大改动考虑先合并到 GDDesignedGame 分支再合并到 main
+
 ## 构建与开发命令
+
+**ESP-IDF版本**: 5.2.6
 
 ```bash
 # 配置项目（目标为ESP32-S3）
 idf.py set-target esp32s3
 
-# 编译
+# 编译项目
 idf.py build
+
+# 只编译特定组件
+idf.py build components/BSP/I2C
+idf.py build components/Middlewares/OLED
 
 # 烧录到设备
 idf.py -p COMX flash
@@ -29,6 +47,9 @@ idf.py -p COMX monitor
 
 # 清理构建
 idf.py fullclean
+
+# 清理并重新配置
+idf.py fullclean && idf.py set-target esp32s3
 ```
 
 ## 代码架构
@@ -37,7 +58,7 @@ idf.py fullclean
 - **main/** - 主程序入口，任务调度和初始化
 - **components/BSP/** - 硬件抽象层驱动
   - I2C驱动 (`i2c_driver.c/h`) - 全局I2C总线管理
-  - MQTT (`mqtt.c/h`) - MQTT客户端和配网
+  - MQTT (`mqtt.c/h`, `onenet_token.c`) - MQTT客户端和配网
   - RTC (`rtc_driver.c/h`) - RTC时钟
   - 蜂鸣器 (`Buzzer.c/h`)
   - 按键 (`Key.c/h`)
@@ -48,12 +69,40 @@ idf.py fullclean
   - MessageQueue (`MessageQueue.c/h`) - 任务间通信
   - GetBatteryLevel (`GetBaLevel.c/h`) - 电池电量获取
 
+### 组件依赖关系
+```
+main (REQUIRES: BSP, Middlewares)
+  ├── BSP (REQUIRES: driver, esp_wifi, esp_netif, esp_event, nvs_flash,
+  │         mqtt, wifi_provisioning, bt, protocomm, esp_http_server, lwip, json, spiffs)
+  │   └── Middlewares (REQUIRES: driver, BSP, esp_adc, esp_timer)
+  │       ├── MAX30102, OLED, MPU6050, MessageQueue, GetBatteryLevel
+  └── Middlewares (REQUIRES: BSP)
+```
+
 ### 核心任务架构（多核双核运行）
-- **Core 0**: `Task_MQTT_Message_Handler` - MQTT消息处理，`Task_Buzzer` - 蜂鸣器控制
-- **Core 1**: `Task_Max30102_Monitor` - MAX30102传感器监测，`Task_Mpu6050_Monitor` - MPU6050传感器监测，`Task_OLED_Show` - OLED显示更新
+
+**Core 0**:
+- `Task_MQTT_Message_Handler` (优先级3) - MQTT消息处理、连接管理
+- `Task_Buzzer` (优先级2) - 蜂鸣器控制、报警触发
+
+**Core 1**:
+- `Task_Max30102_Monitor` (优先级5) - MAX30102心率/血氧监测（50Hz）
+- `Task_Mpu6050_Monitor` (优先级5) - MPU6050加速度计/陀螺仪监测
+- `Task_OLED_Show` (优先级2) - OLED显示更新（交替刷新心率/血氧或默认界面）
 
 ### 数据流
 传感器数据 → MessageQueue → 对应处理任务 → 更新显示/发布MQTT
+
+### 调试任务优先级
+查看任务运行状态：`idf.py -p COMX monitor` 过滤查看 `Task_` 开头的任务，或使用：
+- ESP-IDF菜单配置：`idf.py menuconfig` → `Component config` → `FreeRTOS` → `Task and Queue` 配置
+
+### 切换调试模式
+若需查看详细日志，可在`sdkconfig`中调整日志级别（默认6=INFO）：
+```bash
+idf.py menuconfig
+# Component config → Log output → Default log verbosity → Debug (7)
+```
 
 ## 关键设计
 
@@ -74,6 +123,30 @@ WiFi凭据和MQTT配置存储在NVS的`watch_cfg`命名空间中。
 通过ESP-BLE-PROVISIONING进行首次配网，完成后凭证持久化到NVS。
 
 ## 配置与调优
+
+### 组件开发
+添加新中间件组件到 `components/Middlewares/CMakeLists.txt`：
+```cmake
+set(src_dirs
+    MAX30102/max30102.c
+    OLED/OLED.c
+    OLED/OLED_Data.c
+    MPU6050/MPU6050.c
+    MessageQueue/MessageQueue.c
+    GetBatteryLevel/GetBaLevel.c
+    NEW_COMPONENT/new_component.c)  # 添加新组件
+
+set(include_dirs
+    OLED
+    MAX30102
+    MPU6050
+    MessageQueue
+    GetBatteryLevel
+    NEW_COMPONENT
+    ./)
+```
+
+### MQTT配置三种方式
 
 ### MQTT配置三种方式
 1. **修改代码默认值**（需要erase-flash）：在`mqtt.h`修改`DEFAULT_MQTT_USERNAME`和`DEFAULT_MQTT_PASSWORD`

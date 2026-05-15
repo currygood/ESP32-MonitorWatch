@@ -51,6 +51,16 @@
 #define NVS_KEY_PROV_DONE       "prov_done"        // 配网完成标志位（uint8）
 
 // ============================================================
+// 凭据缓冲区大小
+// ============================================================
+#define CRED_SSID_MAX_LEN      			64
+#define CRED_PASS_MAX_LEN       		128
+#define CRED_MQTT_USER_MAX_LEN  		64
+#define CRED_MQTT_PASS_MAX_LEN  		256
+#define CRED_MQTT_CLIENT_ID_MAX_LEN		64
+#define CRED_MQTT_KEY_MAX_LEN  		256
+
+// ============================================================
 // AP 配网配置
 // ============================================================
 #define AP_SSID               "EpiWatch_AP"
@@ -71,16 +81,6 @@ typedef struct
 }ws_cfg_t;
 
 // ============================================================
-// 凭据缓冲区大小
-// ============================================================
-#define CRED_SSID_MAX_LEN      			64
-#define CRED_PASS_MAX_LEN       		128
-#define CRED_MQTT_USER_MAX_LEN  		64
-#define CRED_MQTT_PASS_MAX_LEN  		256
-#define CRED_MQTT_CLIENT_ID_MAX_LEN		64
-#define CRED_MQTT_KEY_MAX_LEN  		256
-
-// ============================================================
 // 癫痫监测传感器数据结构
 // ============================================================
 typedef struct {
@@ -97,14 +97,6 @@ typedef struct {
 uint8_t Wifi_Init(void);
 esp_err_t MQTT_App_Start(uint8_t choice);
 esp_err_t MQTT_Publish(const char *topic, const char *data, int len);
-void      generate_sensor_data(sensor_data_t *data);
-
-//AP配网
-void MQTT_Start_AP_Provisioning(p_wifi_state_callback f);
-
-
-// MQTT 消息处理主任务（在 main.c 中通过 xTaskCreate 创建）
-void Task_MQTT_Message_Handler(void *pvParameters);
 
 // ============================================================
 // NVS 凭据管理 API（可供 OLED 菜单等模块调用）
@@ -122,12 +114,21 @@ esp_err_t NVS_Clear_All_Credentials(void);  // 清除全部配置（重置手表
 // ============================================================
 // WiFi 连接状态查询 API（供 OLED 等模块使用）
 // ============================================================
+/** 
+ * @brief 是否已经连接了路由器
+ * @param 无
+ * @return 是/否
+*/
+bool wifi_manager_is_connect(void);
+
+/***
+ * @brief 是否连接onenet平台
+ * @param 无
+ * @return true/false 是否
+*/
 bool MQTT_Is_Connected(void);
 
-// ============================================================
-// BLE 配网管理 API（可供 OLED 设置菜单调用）
-// ============================================================
-// 清除 NVS 凭据并重启，下次启动自动进入 BLE 配网模式
-esp_err_t BLE_Provisioning_Reset(void);
+// MQTT 消息处理主任务（在 main.c 中通过 xTaskCreate 创建）
+void Task_MQTT_Message_Handler(void *pvParameters);
 
 #endif // __MQTT_H__
