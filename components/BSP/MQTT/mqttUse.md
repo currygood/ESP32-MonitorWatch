@@ -30,3 +30,45 @@ C
 OneNET 的密码（Password）通常是一个 Token（很长的一串，包含 version, res, et, method, sign）。
 如果你是手动生成的 Token，请确保它的 过期时间 (et) 还没到。
 如果账号信息不匹配，串口日志会不停报错 MQTT_EVENT_ERROR，且连接返回码通常是 5 (Unauthorized)。
+
+
+####
+
+根据这些参考代码，帮我在我mqtt模块中把ble配网删掉，用ap配网，这个ap配网的网页你也要生成，html放在storage存储区；ap配网要求：这个ap配网的网页不只是需要有连接wifi的部分，还要上传m
+
+  qtt的信息（如果没上传，使用默认宏定义的，上传了用上传的，和wifi信息一起保存到nvs） @components/BSP/MQTT/mqtt.c
+
+  @components/BSP/MQTT/mqtt.h  获得的mqtt信息要求：user，name，，client_id，key 四个。esp_mqtt_client_config_t
+
+  mqtt_cfg = {
+
+          .broker.address.hostname        = MQTT_HOST,
+
+          .broker.address.port            = MQTT_PORT,
+
+          .broker.address.transport       = MQTT_TRANSPORT_OVER_TCP,
+
+          .credentials.client_id          = MQTT_CLIENT_ID,
+
+          .credentials.username           = mqtt_user,
+
+          .credentials.authentication.password = mqtt_pass,
+
+      }; 这里的client_id对应client_id，username对应user，然后password是一串东西的组合，看这个文件：passwd.md    然后我是需要长按key2才进行ap配网（三分钟以内），没长按的情况就是检查如mqtt.c中的
+
+路径 A：NVS 中有凭据 → 直接连接
+
+ESP_LOGE(TAG, " WiFi 连接失败，进入离线模式或等待key2长按进入ap配网");
+	esp_wifi_stop();
+    return ESP_FAIL;
+
+maic.c中的
+
+if(event == KEY_EVENT_LONG_PRESS) {
+			// 长按触发ap配网
+			
+		}
+
+触发配网
+
+整个流程都放到mqtt模块

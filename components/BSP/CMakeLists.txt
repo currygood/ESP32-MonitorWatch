@@ -3,7 +3,8 @@ set(src_dirs
 	MQTT/mqtt.c
 	RTC/rtc_driver.c
 	Buzzer/Buzzer.c
-	KEY/Key.c)
+	KEY/Key.c
+	MQTT/onenet_token.c)
 
 set(include_dirs
 	I2C
@@ -19,5 +20,5 @@ set(requires
 idf_component_register(SRCS "${src_dirs}"
 					   INCLUDE_DIRS "${include_dirs}"
 					   REQUIRES "${requires}"
-					   REQUIRES driver esp_wifi esp_netif esp_event nvs_flash mqtt wifi_provisioning bt protocomm json)
+					   REQUIRES driver esp_wifi esp_netif esp_event nvs_flash mqtt wifi_provisioning bt protocomm esp_wifi esp_http_server lwip json spiffs)
 component_compile_options(-ffast-math -O3 -Wno-error=format=-Wno-format)

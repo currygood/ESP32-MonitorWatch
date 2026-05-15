@@ -20,6 +20,7 @@ void My_Key_Callback(key_id_t id, key_event_t event);
 
 // 全局变量
 TaskHandle_t Buzzer_Task_Handle = NULL;  // 真正的定义，分配内存空间
+TaskHandle_t MQTT_Task_Handle = NULL;    // 真正的定义，分配内存空间
 
 void app_main(void) 
 {
@@ -67,7 +68,7 @@ void app_main(void)
 
 	// 创建任务
 	xTaskCreatePinnedToCore(Task_Buzzer, "Buzzer_Task", 2048, NULL, 2, &Buzzer_Task_Handle,0); // 创建蜂鸣器任务并保存句柄
-	xTaskCreatePinnedToCore(Task_MQTT_Message_Handler, "MQTT_Task", 10240, NULL, 3, NULL, 0); 
+	xTaskCreatePinnedToCore(Task_MQTT_Message_Handler, "MQTT_Task", 10240, NULL, 3, &MQTT_Task_Handle, 0); 
 	xTaskCreatePinnedToCore(Task_Max30102_Monitor, "max30102_Task", 4096, (void *)Buzzer_Task_Handle, 5, NULL, 1);
 	xTaskCreatePinnedToCore(Task_Mpu6050_Monitor, "MPU6050_Task", 4096, (void *)Buzzer_Task_Handle, 5, NULL, 1);
 	xTaskCreatePinnedToCore(Task_OLED_Show, "Task_OLED_Show", 10240, NULL, 2, NULL, 1);
@@ -98,6 +99,10 @@ void My_Key_Callback(key_id_t id, key_event_t event) {
 				OLED_ShowState = OLED_ShowState==1 ? 2 : 1; // 切换状态
 				OLED_Set_ShowState(OLED_ShowState);
 			}
+		}
+		if(event == KEY_EVENT_LONG_PRESS) {
+			// 长按触发ap配网
+			xTaskNotify(MQTT_Task_Handle, AP_Enter_Provision, eSetValueWithOverwrite);
 		}
 	}
 }
