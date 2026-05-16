@@ -1071,7 +1071,7 @@ void Task_MQTT_Message_Handler(void *pvParameters)
 	uint8_t mqtt_app_choice = 0;
 	// // 清除所有 MQTT 凭据
 	// //debug阶段，方便测试
-	NVS_Clear_All_Credentials();
+	// NVS_Clear_All_Credentials();
 
     // ---------- WiFi 连接（含 AP 配网逻辑）----------
     ret = Wifi_Init();

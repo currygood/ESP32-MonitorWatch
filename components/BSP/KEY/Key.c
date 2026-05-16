@@ -9,6 +9,8 @@ typedef enum {
     STATE_IDLE,
     STATE_DEBOUNCE,
     STATE_WAIT_RELEASE,
+	STATE_WAIT_FOR_SECOND_PRESS, // 新增：等待第二次按下的窗口期
+    STATE_DEBOUNCE_SECOND,       // 新增：第二次按下的消抖
     STATE_RELEASE_WAITED,
 } key_state_t;
 
@@ -82,20 +84,44 @@ static void key_timer_cb(TimerHandle_t timer)
             if (level == 0) { // 手指还没抬起来
                 if ((now - ctx->press_tick) >= pdMS_TO_TICKS(KEY_LONG_MS)) {
                     trigger_event(ctx, KEY_EVENT_LONG_PRESS);
-                    // 【关键修改】：进入一个死等松开的状态，防止重复触发
                     ctx->state = STATE_RELEASE_WAITED;
-                    xTimerChangePeriod(ctx->timer, pdMS_TO_TICKS(50), 0); // 抬手检查频率
+                    xTimerChangePeriod(ctx->timer, pdMS_TO_TICKS(50), 0);
                 }
-            } else { // 提前松开了 -> 判定为单击
-                trigger_event(ctx, KEY_EVENT_SINGLE_CLICK);
-                ctx->state = STATE_IDLE;
-                xTimerStop(ctx->timer, 0); // 停止长按定时器，防止继续检测长按
+            } else { // 第一次松开了！
+                // 不要触发单击，进入双击等待窗口
+                ctx->state = STATE_WAIT_FOR_SECOND_PRESS;
+                xTimerChangePeriod(ctx->timer, pdMS_TO_TICKS(KEY_DOUBLE_MS), 0);
             }
             break;
 
-        case STATE_RELEASE_WAITED: // 新增状态
-            if (level == 1) { // 终于松手了
+        case STATE_WAIT_FOR_SECOND_PRESS:
+            if (level == 0) { // 在窗口期内再次按下
+                ctx->state = STATE_DEBOUNCE_SECOND;
+                xTimerChangePeriod(ctx->timer, pdMS_TO_TICKS(KEY_DEBOUNCE_MS), 0);
+            } else { 
+                // 窗口期到了（定时器溢出），依然是高电平 -> 判定为单击
+                trigger_event(ctx, KEY_EVENT_SINGLE_CLICK);
                 ctx->state = STATE_IDLE;
+                xTimerStop(ctx->timer, 0);
+            }
+            break;
+
+        case STATE_DEBOUNCE_SECOND:
+            if (level == 0) { // 确认是第二次按下
+                trigger_event(ctx, KEY_EVENT_DOUBLE_CLICK);
+                ctx->state = STATE_RELEASE_WAITED;
+                xTimerChangePeriod(ctx->timer, pdMS_TO_TICKS(50), 0);
+            } else {
+                // 可能是抖动，超时后判定为之前的单击
+                trigger_event(ctx, KEY_EVENT_SINGLE_CLICK);
+                ctx->state = STATE_IDLE;
+            }
+            break;
+
+        case STATE_RELEASE_WAITED:
+            if (level == 1) { 
+                ctx->state = STATE_IDLE;
+                xTimerStop(ctx->timer, 0);
             }
             break;
     }

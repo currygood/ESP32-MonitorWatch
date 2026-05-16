@@ -15,6 +15,8 @@
 #include "GetBaLevel.h"
 #include "Buzzer.h"
 #include "Key.h"
+#include "esp_sleep.h"
+#include "ulp_riscv.h"
 
 void My_Key_Callback(key_id_t id, key_event_t event);
 
@@ -86,10 +88,14 @@ void My_Key_Callback(key_id_t id, key_event_t event) {
         if (event == KEY_EVENT_SINGLE_CLICK) {
             buzzer_notify_off_from_key(); // 通过任务通知关闭蜂鸣器
         }
-		if(event == KEY_EVENT_LONG_PRESS) {
+		if(event == KEY_EVENT_DOUBLE_CLICK) {
 			// 长按切换OLED显示状态
 			isOLEDShow = !isOLEDShow;
 			OLED_Notify_Show(isOLEDShow);
+		}
+		if(event == KEY_EVENT_LONG_PRESS)
+		{
+			ESP_LOGW("Test","!!!KET1 LONG!!!");
 		}
     }
 	if(id == KEY_2) {
