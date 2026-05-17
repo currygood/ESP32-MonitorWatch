@@ -119,8 +119,8 @@ idf.py menuconfig
 ### NVS配置存储
 WiFi凭据和MQTT配置存储在NVS的`watch_cfg`命名空间中。
 
-### BLE配网
-通过ESP-BLE-PROVISIONING进行首次配网，完成后凭证持久化到NVS。
+### AP配网
+如果无法连接wifi，长按key2进入ap配网
 
 ## 配置与调优
 
@@ -182,3 +182,8 @@ set(include_dirs
 - 局部变量：首单词小写，后续首字母大写（如`sensorData`）
 - 函数：驼峰+下划线命名（如`GetHeartRate`）
 - 有大括号时，左括号和右括号各占一行
+
+
+### 进入深度睡眠+ULP协处理器
+长按key1或者电池电量低于40%-进入深度睡眠+启动ULP
+ULP里面处理max30102和mpu6050的数据，如果异常（这个异常是怎么判断：心率连续3次过高/过低，mpu6050连续3次监测到异常运动），唤醒主cpu，传送异常数据到主cpu，然后主cpu处理后发送到onenet平台；当电池电量大于等于85的时候也会唤醒主CPU
