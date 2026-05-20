@@ -47,6 +47,8 @@
  */
 esp_err_t OLED_Init(i2c_master_bus_handle_t bus_handle);
 
+void OLED_WriteCommand(uint8_t Command);
+
 /*更新函数*/
 void OLED_Update(void);
 void OLED_UpdateArea(int16_t X, int16_t Y, uint8_t Width, uint8_t Height);

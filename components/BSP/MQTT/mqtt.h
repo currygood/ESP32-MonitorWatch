@@ -97,7 +97,7 @@ typedef struct {
 uint8_t Wifi_Init(void);
 esp_err_t MQTT_App_Start(uint8_t choice);
 esp_err_t MQTT_Publish(const char *topic, const char *data, int len);
-
+esp_mqtt_client_handle_t MQTT_Give();
 // ============================================================
 // NVS 凭据管理 API（可供 OLED 菜单等模块调用）
 // ============================================================

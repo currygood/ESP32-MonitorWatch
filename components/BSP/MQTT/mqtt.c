@@ -78,6 +78,11 @@ static int client_sockfd = -1;
 static TaskHandle_t Scan_Task_Handle = NULL;
 static TaskHandle_t AP_Task_Handle = NULL;
 
+esp_mqtt_client_handle_t MQTT_Give()
+{
+	return mqtt_client;
+}
+
 // ============================================================
 // ①  NVS 凭据管理
 // ============================================================

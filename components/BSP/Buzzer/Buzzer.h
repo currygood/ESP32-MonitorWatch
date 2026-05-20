@@ -23,8 +23,6 @@ typedef enum {
 extern TaskHandle_t Buzzer_Task_Handle;
 
 esp_err_t buzzer_init(int gpio_buzze_Pin, int freq_hz);
-void buzzer_on(void);
-void buzzer_off(void);
 
 // 修改后的通知函数：直接发送任务通知
 void buzzer_notify_on_from_sensor(void); // 传感器统一调用这个

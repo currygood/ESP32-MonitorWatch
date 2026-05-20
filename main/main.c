@@ -54,10 +54,10 @@ void app_main(void)
 	int32_t final_spo2, final_hr;
 			int8_t spo2_v, hr_v;
     if (cause == ESP_SLEEP_WAKEUP_ULP) {
-        ESP_LOGE("MainWake","🔔 ULP 唤醒！检测到潜在异常...\n");
+        ESP_LOGE("MainWake","🔔 ULP 唤醒！检测到潜在异常...wakeup_reaon=%ld\n",ulp_wakeup_reason);
 
         if (ulp_wakeup_reason == 1) {
-            ESP_LOGE("MainWake","原因：心率异常（连续3次）\n");
+            ESP_LOGE("MainWake","原因：心率异常（连续2次）\n");
 			// 使用你提供的算法进行二次确认
 			
 			// 注意：将 ULP 的 uint32_t 缓冲区传给你主 CPU 的算法
@@ -74,7 +74,7 @@ void app_main(void)
 			}
 			
         } else if (ulp_wakeup_reason == 2) {
-            ESP_LOGE("MainWake","原因：跌倒冲击（连续2次）\n");
+            ESP_LOGE("MainWake","原因：跌倒冲击\n");
 			// 使用你提供的跌倒检测函数确认
 			bool is_fall = Mpu6050_Detect_Fall_Or_Convulsion((int16_t*)ulp_shared_ax_buf, 
 																(int16_t*)ulp_shared_ay_buf, 
@@ -170,16 +170,36 @@ void app_main(void)
 	{
 		if(received_cmd == KEY2_LONGPRESS_ENTER_SLEEP || received_cmd == LOW_POWER_ENTER_SLEEP)
 		{
-			// 关闭屏幕
+			ESP_LOGI("MainSleep", "准备进入深度睡眠...");
+
+			// 1. 关闭屏幕 (你已经做了)
 			OLED_Notify_Show(false);
 			OLED_Clear();
 			OLED_Update();
-			// 初始化并启动 ULP
+			OLED_WriteCommand(0xAE); 
+
+			// 2. 关闭网络 (关键！)
+			esp_mqtt_client_stop(MQTT_Give()); // 需传入你的 client 句柄
+			esp_wifi_stop();
+			esp_netif_deinit();
+
+			// 3. 停止蜂鸣器和任务
+			buzzer_notify_off_from_key(); 
+
+			// 4. 初始化并启动 ULP
+			ulp_wakeup_reason = 0; 
 			init_ulp_program();
 
-			// 进入深度睡眠
-			ESP_LOGE("MainWake","主 CPU 进入深度睡眠...\n");
+			// 5. 配置唤醒源
 			ESP_ERROR_CHECK(esp_sleep_enable_ulp_wakeup());
+			
+			// (可选) 隔离 GPIO：防止引脚浮空产生漏电
+			// 对于没有使用的引脚，可以设置为模拟输入模式或加上下拉
+			// rtc_gpio_isolate(GPIO_NUM_x); 
+
+			// 6. 进入深度睡眠
+			ESP_LOGE("MainWake","主 CPU 即将关闭...\n");
+			vTaskDelay(pdMS_TO_TICKS(100)); // 给一点时间让日志打印完
 			esp_deep_sleep_start();
 		}
 	}
