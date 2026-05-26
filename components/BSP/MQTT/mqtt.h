@@ -14,7 +14,6 @@
 #include "mqtt_client.h"
 #include "esp_sntp.h"
 #include "wifi_provisioning/manager.h"
-#include "wifi_provisioning/scheme_ble.h"
 #include "time.h"
 #include "stdlib.h"
 #include "string.h"
@@ -110,7 +109,7 @@ esp_err_t NVS_Load_MQTT_Credentials(char *username, size_t user_len,
                                      char *client_id, size_t client_id_len);
 bool      NVS_Has_Wifi_Credentials(void);
 esp_err_t NVS_Clear_All_Credentials(void);  // 清除全部配置（重置手表）
-
+int Calculate_Risk_Level(uint32_t hr, uint32_t spo2, bool abnormal_motion_detected);// 癫痫发作风险等级计算函数
 // ============================================================
 // WiFi 连接状态查询 API（供 OLED 等模块使用）
 // ============================================================

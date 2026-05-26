@@ -523,6 +523,27 @@ void Max30102_Send_JSON_Data(void)
              abnormal_motion_detected ? 1 : 0, timestamp);
 }
 
+void Max30102_Disable_Interrupts_For_ULP(void) 
+{
+    // 1. 在传感器内部寄存器禁用所有中断
+    // 这样 MAX30102 就不会再主动拉低 GPIO 6 引脚了
+    Max30102_Write_Reg(REG_INTR_ENABLE_1, 0x00);
+    Max30102_Write_Reg(REG_INTR_ENABLE_2, 0x00);
+
+    // 2. 读取一次状态寄存器，确保当前的 INT 引脚被释放（回到高电平）
+    uint8_t dummy;
+    Max30102_Read_Reg(REG_INTR_STATUS_1, &dummy);
+    Max30102_Read_Reg(REG_INTR_STATUS_2, &dummy);
+
+    // 3. 在 ESP32 侧移除 ISR 句柄
+    gpio_isr_handler_remove(MAX30102_INT_GPIO);
+    
+    // 4. 重置引脚状态为普通输入，不带任何中断触发
+    gpio_reset_pin(MAX30102_INT_GPIO);
+    
+    ESP_LOGI("MAX30102", "中断功能已关闭，准备切换至 ULP");
+}
+
 // --- 监测任务 ---
 void Task_Max30102_Monitor(void *pvParameters) {
     esp_log_level_set("gpio", ESP_LOG_ERROR);

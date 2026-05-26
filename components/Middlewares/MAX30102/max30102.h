@@ -60,6 +60,7 @@ void Max30102_Clear_Flag(void);
 void Max30102_Algorithm_Calculate(uint32_t *ir_buffer, int32_t buffer_len, uint32_t *red_buffer,
                                   int32_t *spo2, int8_t *spo2_valid,
                                   int32_t *heart_rate, int8_t *hr_valid);
+void Max30102_Disable_Interrupts_For_ULP(void);
 
 // --- 监测任务 ---
 void Task_Max30102_Monitor(void *pvParameters);

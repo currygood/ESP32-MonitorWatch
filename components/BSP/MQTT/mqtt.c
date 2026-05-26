@@ -875,11 +875,11 @@ uint8_t Wifi_Init(void)
 
 			esp_wifi_connect();
 
-            ESP_LOGW(TAG, ">>> 等待 WiFi 连接（最长 30 秒）...");
+            ESP_LOGW(TAG, ">>> 等待 WiFi 连接（最长 90 秒）...");
             EventBits_t bits = xEventGroupWaitBits(wifi_event_group,
                                                    WIFI_CONNECTED_BIT,
                                                    pdFALSE, pdFALSE,
-                                                   pdMS_TO_TICKS(30000));
+                                                   pdMS_TO_TICKS(90000));
             if (bits & WIFI_CONNECTED_BIT) {
                 ESP_LOGW(TAG, ">>> WiFi 连接成功（NVS 凭据）");
                 ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MIN_MODEM));
@@ -1280,6 +1280,7 @@ void Task_MQTT_Message_Handler(void *pvParameters)
             if (publish_success_count % SUCCESS_LOG_INTERVAL == 1) {
                 ESP_LOGI(TAG, "✅ 数据已发送 (计数:%d)", publish_success_count);
             }
+			
         } else {
             publish_error_count++;
             if (publish_error_count % ERROR_LOG_INTERVAL == 1) {

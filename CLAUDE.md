@@ -57,7 +57,7 @@ idf.py fullclean && idf.py set-target esp32s3
   - `ULP/ulp_i2c_sw.c` - ULP的软件I2C实现
 - **components/BSP/** - 硬件抽象层驱动
   - I2C驱动 (`i2c_driver.c/h`) - 全局I2C总线管理
-  - MQTT (`mqtt.c/h`, `passwd.md`) - MQTT客户端和AP配网（长按key2进入AP配网）
+  - MQTT (`mqtt.c/h`, `passwd.md`) - MQTT客户端
   - RTC (`rtc_driver.c/h`) - RTC时钟
   - 蜂鸣器 (`Buzzer.c/h`)
   - 按键 (`Key.c/h`)
@@ -102,20 +102,8 @@ ULP程序使用软件I2C直接操作传感器，共享变量定义在`ulp_main.c
 **重要**：主CPU代码中引用变量时使用`ulp_shared_*`前缀，但实际定义在ULP程序中。需要在`ulp_main.h`中正确声明这些全局变量以供主CPU访问。
 
 ### ULP启动竞争问题
-**问题**：主CPU读取到的`wakeup_reason`为0的根本原因在于：ULP程序在主CPU启动期间重新运行了，并执行了`wakeup_reason = 0`这行代码。
+有一些bug可以从note文件夹中的笔记中可以找到解决方案，找不到的请阅读整个项目代码文件分析
 
-**时序**：
-1. ULP检测异常，设置`wakeup_reason=1`，调用`ulp_riscv_wakeup_main_processor()`
-2. ULP执行完毕，准备退出
-3. ULP定时器配置下，ULP开始新一轮`main`函数
-4. 主CPU启动耗时200-500ms（Bootloader、分区表、内存初始化、FreeRTOS启动）
-5. ULP抢跑清零：在几百毫秒内，ULP执行了`wakeup_reason = 0;`
-6. 主CPU执行到读取时，读到的是被ULP第二轮运行清零后的值
-
-**解决方案**：
-1. 删掉ULP代码`main`函数里的`wakeup_reason = 0;`初始化
-2. ULP唤醒主CPU后，不要`break`退出`main`，而是进入空死循环`while(1) { ulp_riscv_delay_cycles(ULP_RISCV_CYCLES_PER_MS * 100); }`
-3. 清零操作完全交给主CPU：主CPU唤醒后读取 → 处理逻辑 → 准备下一次入睡前清零
 
 ## 配置与调优
 
@@ -134,6 +122,7 @@ idf_component_register(SRCS "${src_dirs}" INCLUDE_DIRS "${include_dirs}" REQUIRE
 3. **修改OneNET Topic**：在`mqtt.h`修改`SENSOR_REPORT_TOPIC`
 
 AP配网触发：长按key2进入AP配网网页（3分钟内），可上传WiFi和MQTT凭据
+AP配网页面地址：http://192.168.4.1
 
 ### MPU6050检测算法优化
 当前ULP使用加速度平方阈值检测跌倒：`FALL_THRESHOLD_SQ = 24090976`（即加速度>4900²=g²）
@@ -173,6 +162,10 @@ WiFi凭据和MQTT配置存储在NVS的`watch_cfg`命名空间中。
 - **局部变量**：首单词小写，后续首字母大写（如`sensorData`）
 - **函数**：驼峰+下划线（如`GetHeartRate`）
 - **枚举**：全大写下划线（如`KEY_EVENT_LONG_PRESS`）
+
+### 重要已知问题
+1. **ULP第二次唤醒问题**：第二次进入深度睡眠+ULP处理时无法正确退出主CPU的循环（参考`note/2026-05-24.md`）
+2. **ULP启动竞争**：主CPU读取到的`wakeup_reason`可能为0的根本原因是ULP在主CPU启动期间重新运行并清零（已给出解决方案，见"ULP启动竞争问题"部分）
 
 ### 大括号规则
 所有有括号的结构（if/for/while/函数）左括号和右括号各占一行
