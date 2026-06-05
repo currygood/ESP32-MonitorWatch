@@ -16,6 +16,7 @@
 #include "GetBaLevel.h"
 #include "Buzzer.h"
 #include "Key.h"
+#include "en.h"
 #include "esp_sleep.h"
 #include "ulp_riscv.h"
 #include "soc/soc.h"
@@ -54,6 +55,11 @@ static bool isNotFirst=false;
 
 void app_main(void) 
 {
+	// 根据板子电路设计，要给这个引脚高电平，不然松开按键之后就断电了
+	En_Init();	//芯片一直通电，通过控制GPIO来启用或禁用电池电量检测模块，避免不必要的功耗
+	En_Set(EN_CTL_GPIO, 1);	//默认启用电池电量检测，确保系统有电量信息可用
+	ESP_LOGE("EN", "电池电量检测模块已启用，确保系统有电量信息可用");
+
 	isNotFirst=false;
 	APP_MAIN_Handle = xTaskGetCurrentTaskHandle();
 	esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
@@ -159,6 +165,7 @@ void app_main(void)
 
 	//获取电池电量初始化
 	Battery_Level_Init();
+	Battery_Set_ENABLE();	// 启用电池电量检测
 
 	// 初始化蜂鸣器
 	buzzer_init(BUZZER_GPIO_NUM, BUZZER_FREQ_HZ);
@@ -174,6 +181,8 @@ void app_main(void)
 	xTaskCreatePinnedToCore(Task_Max30102_Monitor, "max30102_Task", 4096, (void *)Buzzer_Task_Handle, 5, &Max30102_Task_Handle, 1);
 	xTaskCreatePinnedToCore(Task_Mpu6050_Monitor, "MPU6050_Task", 4096, (void *)Buzzer_Task_Handle, 5, &Mpu6050_Task_Handle, 1);
 	xTaskCreatePinnedToCore(Task_Buzzer, "Buzzer_Task", 2048, NULL, 2, &Buzzer_Task_Handle,0); // 创建蜂鸣器任务并保存句柄
+
+	
 
 	vTaskDelay(pdMS_TO_TICKS(11000)); // 等待初始化 等待连接wifi
 	// 初始化结束后检查是不是因为唤醒重启，如果是，那有异常数据处理    放到这里的原因是message模块和mqtt初始化后才能发送数据
@@ -240,6 +249,7 @@ void app_main(void)
 	}
 
 	vTaskDelay(pdMS_TO_TICKS(10000)); // 等待发送数据完成
+
 	// 进入深度睡眠+ULP逻辑
 	uint32_t received_cmd;
 	while(1)
@@ -295,6 +305,13 @@ void My_Key_Callback(key_id_t id, key_event_t event) {
 		if(event == KEY_EVENT_LONG_PRESS) {
 			// 长按触发ap配网
 			xTaskNotify(MQTT_Task_Handle, AP_Enter_Provision, eSetValueWithOverwrite);
+		}
+	}
+	if(id == KEY_4)
+	{
+		if(event == KEY_EVENT_LONG_PRESS) {
+			// 长按关机
+			En_Set(EN_CTL_GPIO, 0);	// 通过控制GPIO来切断电池电量检测模块的电源，达到关机效果
 		}
 	}
 }

@@ -4,14 +4,16 @@ set(src_dirs
 	RTC/rtc_driver.c
 	Buzzer/Buzzer.c
 	KEY/Key.c
-	MQTT/onenet_token.c)
+	MQTT/onenet_token.c
+	Enable_esp32_CTL/en.c)
 
 set(include_dirs
 	I2C
 	MQTT
 	RTC
 	Buzzer
-	KEY)
+	KEY
+	Enable_esp32_CTL)
 
 set(requires
 	Middlewares

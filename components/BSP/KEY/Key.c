@@ -27,6 +27,7 @@ typedef struct {
 static key_ctx_t s_keys[KEY_NUM] = {
     [0] = { .gpio = KEY_GPIO_1, .state = STATE_IDLE },
 	[1] = { .gpio = KEY_GPIO_2, .state = STATE_IDLE },
+	[2] = { .gpio = KEY_GPIO_4, .state = STATE_IDLE },
 };
 
 static key_callback_t s_user_cb = NULL;

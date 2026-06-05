@@ -9,13 +9,14 @@
 #include "freertos/queue.h"
 
 /* ===================== 用户配置区 ===================== */
-#define KEY_NUM           2
+#define KEY_NUM           3
 #define KEY_DEBOUNCE_MS   20    // 消抖
 #define KEY_LONG_MS       800   // 长按（800ms后触发）
 #define KEY_DOUBLE_MS     200   // 双击间隔（200ms内有效）
 
-#define KEY_GPIO_1        GPIO_NUM_15
-#define KEY_GPIO_2        GPIO_NUM_9
+#define KEY_GPIO_1        GPIO_NUM_39
+#define KEY_GPIO_2        GPIO_NUM_21
+#define KEY_GPIO_4        GPIO_NUM_13
 /* ===================================================== */
 
 typedef enum {
@@ -29,6 +30,7 @@ typedef enum {
     KEY_NONE = 0,
     KEY_1    = 1,
     KEY_2    = 2,
+    KEY_4    = 4,
 } key_id_t;
 
 typedef struct {

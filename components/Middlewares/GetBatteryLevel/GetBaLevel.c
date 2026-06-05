@@ -194,3 +194,20 @@ float Battery_Get_Voltage(void)
 {
     return Battery_Voltage;
 }
+
+/**
+ * @brief 启用电池电量检测
+*/
+void Battery_Set_ENABLE(void)
+{
+	gpio_set_level(BATTERY_ADC_ENABLED, 1);
+}
+
+
+/**
+ * @brief 禁用电池电量检测
+*/
+void Battery_Set_DISABLE(void)
+{
+	gpio_set_level(BATTERY_ADC_ENABLED, 0);
+}

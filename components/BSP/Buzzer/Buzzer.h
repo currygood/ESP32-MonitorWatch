@@ -9,7 +9,7 @@
 extern "C" {
 #endif
 
-#define BUZZER_GPIO_NUM       5
+#define BUZZER_GPIO_NUM       40
 #define BUZZER_FREQ_HZ        2000
 #define BUZZER_ON_LOCKOUT_MS  15000  // 15秒冷却时间
 

@@ -7,7 +7,8 @@
 
 // --- 电池电量检测配置宏 ---
 #define BATTERY_ADC_CHANNEL     ADC_CHANNEL_7     // ADC通道7对应GPIO8
-#define BATTERY_ADC_PIN         8                // 电池检测引脚
+#define BATTERY_ADC_PIN         GPIO_NUM_5                // 电池检测引3脚（GPIO5）
+#define BATTERY_ADC_ENABLED     GPIO_NUM_6                // 是否启用电池电量检测（1启用，0禁用）
 #define BATTERY_ADC_UNIT        ADC_UNIT_1        // ADC单元1
 #define BATTERY_ADC_WIDTH       ADC_WIDTH_BIT_12  // 12位分辨率
 #define BATTERY_ADC_ATTEN       ADC_ATTEN_DB_11   // 11dB衰减（0-3.3V范围）
@@ -18,8 +19,8 @@
 #define VOLTAGE_DIVIDER_RATIO    1.0f             // 电压分压比（无分压时为1.0）
 
 // --- 电池电压范围（典型锂电池） ---  通过分压计算的大概结果
-#define BATTERY_FULL_VOLTAGE 2.0f
-#define BATTERY_EMPTY_VOLTAGE 1.5f
+#define BATTERY_FULL_VOLTAGE 2.9647f
+#define BATTERY_EMPTY_VOLTAGE 2.6117f
 
 // --- 全局变量声明 ---
 extern bool Battery_Level_Initialized;
@@ -73,5 +74,16 @@ uint8_t Battery_Get_Level(void);
  * @return float 电池电压（单位：V）
  */
 float Battery_Get_Voltage(void);
+
+/**
+ * @brief 启用电池电量检测
+*/
+void Battery_Set_ENABLE(void);
+
+
+/**
+ * @brief 禁用电池电量检测
+*/
+void Battery_Set_DISABLE(void);
 
 #endif // GET_BATTERY_LEVEL_H

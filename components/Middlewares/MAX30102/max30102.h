@@ -13,7 +13,7 @@
 #include "MessageQueue.h"
 
 // --- 硬件映射 ---
-#define MAX30102_INT_GPIO 6
+#define MAX30102_INT_GPIO 3
 #define MAX30102_ADDR 0x57
 
 // --- 常用寄存器 ---

@@ -1,5 +1,8 @@
 #include "i2c_driver.h"
 #include "esp_log.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 // 全局I2C总线句柄
 static i2c_master_bus_handle_t global_i2c_bus = NULL;
@@ -62,4 +65,18 @@ esp_err_t I2c_Delete_Bus(i2c_master_bus_handle_t bus_handle) {
 // 获取全局I2C总线句柄
 i2c_master_bus_handle_t I2c_Get_Global_Bus_Handle(void) {
     return global_i2c_bus;
+}
+
+// 在 i2c_driver.c 中添加
+esp_err_t I2c_Write_Bytes(i2c_master_dev_handle_t dev_handle, uint8_t reg, uint8_t *buffer, size_t count) {
+    // OLED 的逻辑通常是 [控制字节/寄存器] + [连续的数据]
+    uint8_t *temp_buf = (uint8_t *)malloc(count + 1);
+    if (temp_buf == NULL) return ESP_ERR_NO_MEM;
+    
+    temp_buf[0] = reg;
+    memcpy(&temp_buf[1], buffer, count);
+    
+    esp_err_t ret = i2c_master_transmit(dev_handle, temp_buf, count + 1, -1);
+    free(temp_buf);
+    return ret;
 }

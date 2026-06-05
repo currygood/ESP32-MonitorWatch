@@ -37,15 +37,14 @@ uint8_t OLED_DisplayBuf[8][128];
 
 /**
  * 函    数：OLED写命令
- * 参    数：Command 要写入的命令值，范围：0x00~0xFF
- * 返 回 值：无
- *
- * I2C 帧格式：[ADDR W] [0x00 控制字节] [Command]
+ * 参    数：Command 要写入的命令值
  */
 void OLED_WriteCommand(uint8_t Command)
 {
-    uint8_t buf[2] = {0x00, Command};   /* 0x00 = Co=0, D/C#=0 → 写命令 */
-    esp_err_t ret = i2c_master_transmit(oled_dev, buf, sizeof(buf), -1);
+    // 直接使用驱动模块的写寄存器函数
+    // 0x00 是 OLED 的命令控制字节 (Co=0, D/C#=0)
+    esp_err_t ret = I2c_Write_Reg(oled_dev, 0x00, Command);
+    
     if (ret != ESP_OK)
     {
         ESP_LOGE(TAG, "WriteCommand 0x%02X failed: %s", Command, esp_err_to_name(ret));
@@ -56,116 +55,81 @@ void OLED_WriteCommand(uint8_t Command)
  * 函    数：OLED写数据
  * 参    数：Data  要写入数据的起始地址
  * 参    数：Count 要写入数据的数量
- * 返 回 值：无
- *
- * I2C 帧格式：[ADDR W] [0x40 控制字节] [Data[0]] [Data[1]] ... [Data[Count-1]]
- * 使用栈上缓冲（最大 129 字节 = 1字节控制 + 128字节数据），满足 OLED_Update 一次写 128 字节的需求
  */
 void OLED_WriteData(uint8_t *Data, uint8_t Count)
 {
-    /* Count 最大 128，加上控制字节共 129 字节，栈上分配即可 */
-    uint8_t buf[129];
-    buf[0] = 0x40;                      /* 0x40 = Co=0, D/C#=1 → 写数据 */
-    memcpy(&buf[1], Data, Count);
+    // 使用驱动模块封装的写多个字节函数
+    // 0x40 是 OLED 的数据控制字节 (Co=0, D/C#=1)
+    
+    /* 
+       方案 A: 如果你在 i2c_driver.c 补充了 I2c_Write_Bytes
+    */
+    esp_err_t ret = I2c_Write_Bytes(oled_dev, 0x40, Data, Count);
 
-    esp_err_t ret = i2c_master_transmit(oled_dev, buf, (size_t)(Count + 1), -1);
+    /* 
+       方案 B: 如果不想修改 i2c_driver.c，直接写逻辑
+       uint8_t buf[129];
+       buf[0] = 0x40;
+       memcpy(&buf[1], Data, Count);
+       esp_err_t ret = i2c_master_transmit(oled_dev, buf, Count + 1, -1);
+    */
+
     if (ret != ESP_OK)
     {
         ESP_LOGE(TAG, "WriteData failed: %s", esp_err_to_name(ret));
     }
 }
 
-/*********************通信协议*/
-
-
-/*硬件配置*********************/
+/*********************硬件配置*/
 
 /**
  * 函    数：OLED初始化
- * 参    数：dev_handle  已通过 I2c_Add_Device() 添加的 OLED I2C 设备句柄
- * 返 回 值：无
- * 说    明：
- *   调用前请先完成 I2C 总线初始化：
- *     I2c_Init_Bus(I2C_PORT, SDA_GPIO, SCL_GPIO, I2C_FREQ, &bus_handle);
- *     I2c_Add_Device(bus_handle, OLED_I2C_ADDR, I2C_FREQ, &dev_handle);
- *     OLED_Init(dev_handle);
+ * 参    数：bus_handle  从 I2c_Get_Global_Bus_Handle() 获取的句柄
  */
 esp_err_t OLED_Init(i2c_master_bus_handle_t bus_handle)
 {
-    // 添加OLED设备到I2C总线
-	esp_err_t ret = I2c_Add_Device(bus_handle, OLED_ADDR, I2C_FREQ, &oled_dev);
-	if (ret != ESP_OK) {
-		return ret;
-	}
+    if (bus_handle == NULL) return ESP_ERR_INVALID_ARG;
 
-	uint32_t i, j;
+    // 1. 调用驱动 API 添加设备到总线
+    esp_err_t ret = I2c_Add_Device(bus_handle, OLED_ADDR, I2C_FREQ, &oled_dev);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add OLED device");
+        return ret;
+    }
 
-	// 延时一段时间，确保OLED电源稳定
-	for (i = 0; i < 1000; i++) // 延时
-	{
-		for (j = 0; j < 1000; j++)
-			;
-	}
+    // 2. 延时 (使用 vTaskDelay 更符合 ESP32 风格，不阻塞 CPU)
+    vTaskDelay(pdMS_TO_TICKS(100));
 
-	// 关闭OLED显示
-	OLED_WriteCommand(0xAE); // 关闭显示
+    // 3. 序列化初始化命令
+    OLED_WriteCommand(0xAE); // 关闭显示
+    OLED_WriteCommand(0xD5); // 设置时钟分频
+    OLED_WriteCommand(0x80);
+    OLED_WriteCommand(0xA8); // 设置多路复用
+    OLED_WriteCommand(0x3F);
+    OLED_WriteCommand(0xD3); // 设置位移
+    OLED_WriteCommand(0x00);
+    OLED_WriteCommand(0x40); // 设置开始行
+    OLED_WriteCommand(0xA1); // 左右方向
+    OLED_WriteCommand(0xC8); // 上下方向
+    OLED_WriteCommand(0xDA); // COM引脚配置
+    OLED_WriteCommand(0x12);
+    OLED_WriteCommand(0x81); // 对比度
+    OLED_WriteCommand(0xCF);
+    OLED_WriteCommand(0xD9); // 预充电
+    OLED_WriteCommand(0xF1);
+    OLED_WriteCommand(0xDB); // VCOMH电压
+    OLED_WriteCommand(0x30);
+    OLED_WriteCommand(0xA4); // 全屏点亮/不点亮
+    OLED_WriteCommand(0xA6); // 正常显示
+    OLED_WriteCommand(0x8D); // 电荷泵
+    OLED_WriteCommand(0x14);
+    OLED_WriteCommand(0xAF); // 打开显示
 
-	// 设置时钟分频因子/振荡器频率
-	OLED_WriteCommand(0xD5); // 设置显示时钟分频因子/振荡器频率
-	OLED_WriteCommand(0x80);
+    // 4. 清屏
+    OLED_Clear(); 
+    OLED_Update();
 
-	// 设置多路复用率
-	OLED_WriteCommand(0xA8); // 设置多路复用率
-	OLED_WriteCommand(0x3F);
-
-	// 设置显示偏移
-	OLED_WriteCommand(0xD3); // 设置显示偏移
-	OLED_WriteCommand(0x00);
-
-	// 设置显示开始行
-	OLED_WriteCommand(0x40); // 设置显示开始行
-
-	// 设置左右方向，0xA1正常 0xA0左右反置
-	OLED_WriteCommand(0xA1); // 设置左右方向，0xA1正常 0xA0左右反置
-
-	// 设置上下方向，0xC8正常 0xC0上下反置
-	OLED_WriteCommand(0xC8); // 设置上下方向，0xC8正常 0xC0上下反置
-
-	// 设置COM引脚硬件配置
-	OLED_WriteCommand(0xDA); // 设置COM引脚硬件配置
-	OLED_WriteCommand(0x12);
-
-	// 设置对比度
-	OLED_WriteCommand(0x81); // 设置对比度
-	OLED_WriteCommand(0xCF);
-
-	// 设置预充电周期
-	OLED_WriteCommand(0xD9); // 设置预充电周期
-	OLED_WriteCommand(0xF1);
-
-	// 设置VCOMH电压倍率
-	OLED_WriteCommand(0xDB); // 设置VCOMH电压倍率
-	OLED_WriteCommand(0x30);
-
-	// 设置整个显示打开/关闭
-	OLED_WriteCommand(0xA4); // 设置整个显示打开/关闭
-
-	// 设置显示方式，0xA6正常显示 0xA7反相显示
-	OLED_WriteCommand(0xA6); // 设置显示方式，0xA6正常显示 0xA7反相显示
-
-	// 设置电荷泵
-	OLED_WriteCommand(0x8D); // 设置电荷泵
-	OLED_WriteCommand(0x14);
-
-	// // 打开OLED显示
-	// 低功耗设计，先不打开显示，等需要显示时再打开
-	// OLED_WriteCommand(0xAF); // 打开显示
-
-	// 清除OLED屏幕
-	OLED_Clear(); // OLED清屏
-	OLED_Update();
-
-	return ESP_OK;
+    return ESP_OK;
 }
 
 /**
