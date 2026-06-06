@@ -5,6 +5,9 @@
 #include "driver/adc.h"
 #include "esp_adc_cal.h"
 
+#define ADC_IN_ON 0
+#define ADC_IN_OFF 1
+
 static const char *TAG = "BatteryLevel";
 
 // --- 全局变量定义 ---
@@ -24,7 +27,18 @@ static esp_err_t Battery_Adc_Calibration_Init(void);
 esp_err_t Battery_Level_Init(void)
 {
     esp_err_t ret = ESP_OK;
-    
+    // 在 Battery_Level_Init 函数开头添加
+	gpio_config_t en_gpio = {
+		.pin_bit_mask = (1ULL << BATTERY_ADC_ENABLED),
+		.mode = GPIO_MODE_OUTPUT,
+		.pull_up_en = GPIO_PULLUP_DISABLE,
+		.pull_down_en = GPIO_PULLDOWN_DISABLE,
+		.intr_type = GPIO_INTR_DISABLE,
+	};
+	gpio_config(&en_gpio);
+	Battery_Set_ENABLE();          // 启用电池电量检测
+	vTaskDelay(pdMS_TO_TICKS(10)); // 等待分压电路稳定
+
     // 配置ADC通道
     ret = adc1_config_width(BATTERY_ADC_WIDTH);
     if (ret != ESP_OK) {
@@ -129,7 +143,7 @@ esp_err_t Battery_Read_Voltage(float *voltage)
     const uint8_t sample_count = 16;
     for (uint8_t i = 0; i < sample_count; ++i) {
         adc_value += Battery_Read_Adc_Value();
-        vTaskDelay(1 / portTICK_PERIOD_MS); // 每次采样间隔1ms，避免阻塞
+        vTaskDelay(pdMS_TO_TICKS(1));   // 延时1ms
     }
     adc_value /= sample_count;
 
@@ -200,7 +214,7 @@ float Battery_Get_Voltage(void)
 */
 void Battery_Set_ENABLE(void)
 {
-	gpio_set_level(BATTERY_ADC_ENABLED, 1);
+	gpio_set_level(BATTERY_ADC_ENABLED, ADC_IN_ON);
 }
 
 
@@ -209,5 +223,5 @@ void Battery_Set_ENABLE(void)
 */
 void Battery_Set_DISABLE(void)
 {
-	gpio_set_level(BATTERY_ADC_ENABLED, 0);
+	gpio_set_level(BATTERY_ADC_ENABLED, ADC_IN_OFF);
 }

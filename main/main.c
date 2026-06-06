@@ -165,7 +165,6 @@ void app_main(void)
 
 	//获取电池电量初始化
 	Battery_Level_Init();
-	Battery_Set_ENABLE();	// 启用电池电量检测
 
 	// 初始化蜂鸣器
 	buzzer_init(BUZZER_GPIO_NUM, BUZZER_FREQ_HZ);
@@ -311,7 +310,11 @@ void My_Key_Callback(key_id_t id, key_event_t event) {
 	{
 		if(event == KEY_EVENT_LONG_PRESS) {
 			// 长按关机
-			En_Set(EN_CTL_GPIO, 0);	// 通过控制GPIO来切断电池电量检测模块的电源，达到关机效果
+			ESP_LOGI("MainSleep", "准备关机...");
+			vTaskDelay(pdMS_TO_TICKS(100)); // 给 LOG 输出一点时间
+			Battery_Set_DISABLE();
+			vTaskDelay(pdMS_TO_TICKS(100)); //等待电池电量监测关闭
+			En_Set(EN_CTL_GPIO, 0);	// 通过控制GPIO来切断电池，达到关机效果
 		}
 	}
 }

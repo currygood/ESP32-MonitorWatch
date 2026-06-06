@@ -6,9 +6,9 @@
 #include "esp_err.h"
 
 // --- 电池电量检测配置宏 ---
-#define BATTERY_ADC_CHANNEL     ADC_CHANNEL_7     // ADC通道7对应GPIO8
-#define BATTERY_ADC_PIN         GPIO_NUM_5                // 电池检测引3脚（GPIO5）
-#define BATTERY_ADC_ENABLED     GPIO_NUM_6                // 是否启用电池电量检测（1启用，0禁用）
+#define BATTERY_ADC_CHANNEL     ADC1_CHANNEL_4           // ADC通道0对应GPIO5，根据ESP32的ADC引脚分配
+#define BATTERY_ADC_PIN         GPIO_NUM_5                // 电池检测引脚（GPIO5）
+#define BATTERY_ADC_ENABLED     GPIO_NUM_6                // 是否启用电池电量检测（0启用，1禁用）
 #define BATTERY_ADC_UNIT        ADC_UNIT_1        // ADC单元1
 #define BATTERY_ADC_WIDTH       ADC_WIDTH_BIT_12  // 12位分辨率
 #define BATTERY_ADC_ATTEN       ADC_ATTEN_DB_11   // 11dB衰减（0-3.3V范围）
