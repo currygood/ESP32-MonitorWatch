@@ -55,10 +55,10 @@ static bool isNotFirst=false;
 
 void app_main(void) 
 {
+	vTaskDelay(pdMS_TO_TICKS(5000)); // 等待系统稳定
 	// 根据板子电路设计，要给这个引脚高电平，不然松开按键之后就断电了
 	En_Init();	//芯片一直通电，通过控制GPIO来启用或禁用电池电量检测模块，避免不必要的功耗
 	En_Set(EN_CTL_GPIO, 1);	//默认启用电池电量检测，确保系统有电量信息可用
-	ESP_LOGE("EN", "电池电量检测模块已启用，确保系统有电量信息可用");
 
 	isNotFirst=false;
 	APP_MAIN_Handle = xTaskGetCurrentTaskHandle();
@@ -306,14 +306,13 @@ void My_Key_Callback(key_id_t id, key_event_t event) {
 			xTaskNotify(MQTT_Task_Handle, AP_Enter_Provision, eSetValueWithOverwrite);
 		}
 	}
-	if(id == KEY_4)
+	if(id == KEY_3)
 	{
 		if(event == KEY_EVENT_LONG_PRESS) {
 			// 长按关机
 			ESP_LOGI("MainSleep", "准备关机...");
 			vTaskDelay(pdMS_TO_TICKS(100)); // 给 LOG 输出一点时间
 			Battery_Set_DISABLE();
-			vTaskDelay(pdMS_TO_TICKS(100)); //等待电池电量监测关闭
 			En_Set(EN_CTL_GPIO, 0);	// 通过控制GPIO来切断电池，达到关机效果
 		}
 	}

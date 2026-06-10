@@ -16,7 +16,7 @@
 
 #define KEY_GPIO_1        GPIO_NUM_39
 #define KEY_GPIO_2        GPIO_NUM_21
-#define KEY_GPIO_4        GPIO_NUM_13
+#define KEY_GPIO_3        GPIO_NUM_13
 /* ===================================================== */
 
 typedef enum {
@@ -30,7 +30,7 @@ typedef enum {
     KEY_NONE = 0,
     KEY_1    = 1,
     KEY_2    = 2,
-    KEY_4    = 4,
+    KEY_3    = 3,
 } key_id_t;
 
 typedef struct {
