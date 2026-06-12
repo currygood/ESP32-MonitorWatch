@@ -7,9 +7,9 @@
 
 // --- I2C硬件配置宏 ---
 #define I2C_PORT I2C_NUM_0
-#define I2C_SDA_GPIO 20
-#define I2C_SCL_GPIO 21
-#define I2C_FREQ 400000
+#define I2C_SDA_GPIO 1
+#define I2C_SCL_GPIO 2
+#define I2C_FREQ 400000	//降低频率试试
 
 // I2C 总线句柄
 typedef struct {
@@ -41,4 +41,6 @@ esp_err_t I2c_Delete_Bus(i2c_master_bus_handle_t bus_handle);
 // 全局I2C总线句柄获取函数
 i2c_master_bus_handle_t I2c_Get_Global_Bus_Handle(void);
 
+// 写多个字节
+esp_err_t I2c_Write_Bytes(i2c_master_dev_handle_t dev_handle, uint8_t reg, uint8_t *buffer, size_t count);
 #endif // I2C_DRIVER_H

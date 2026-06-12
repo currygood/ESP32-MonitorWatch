@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir \"C:\\\\Espressif\")",
+      "Bash(dir \"D:\\\\Espressif\")",
+      "Bash(dir \"E:\\\\Espressif\")",
+      "Read(//c/Espressif/**)",
+      "Read(//d/Espressif/**)",
+      "Bash(where idf.py)",
+      "Bash(export IDF_PATH=/f/esp-idf/v5.2.6/esp-idf)",
+      "Bash(/f/esp_tool/tools/idf-exe/1.0.3/idf.py.exe build *)",
+      "Bash(export PYTHONPATH=/f/esp-idf/v5.2.6/esp-idf/tools)",
+      "Bash(/f/esp_tool/python_env/idf5.2_py3.11_env/Scripts/python.exe -m pip install --user -r /f/esp-idf/v5.2.6/esp-idf/requirements.txt)",
+      "Bash(cmd.exe *)",
+      "Bash(powershell.exe *)",
+      "Bash(ninja)",
+      "Bash(f:/esp_tool/python_env/idf5.2_py3.11_env/Scripts/python.exe *)",
+      "Bash(ninja flash *)",
+      "Bash(ninja monitor *)",
+      "Bash(idf.py build *)",
+      "Bash(call \"F:\\\\esp-idf\\\\v5.2.6\\\\esp-idf\\\\export.bat\")",
+      "Bash(\"F:\\\\esp-idf\\\\v5.2.6\\\\esp-idf\\\\export.bat\")",
+      "Bash(python *)",
+      "Bash(F:/esp-idf/v5.2.6/esp-idf/tools/idf.py build *)",
+      "Bash(\"F:\\\\esp-idf\\\\v5.2.6\\\\export.bat\")",
+      "WebSearch"
+    ]
+  }
+}
