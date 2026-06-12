@@ -1063,6 +1063,71 @@ int Calculate_Risk_Level(uint32_t hr, uint32_t spo2, bool abnormal_motion_detect
 	return 5;
 }
 
+// =============================================================
+// 风险等级计算逻辑（根据心率和血氧计算，是否检测到异常运动计算）
+// 通过前3次计算风险等级
+// =============================================================
+uint8_t Risk_Last[3] = {0};
+uint8_t Risk_Count=0;
+float HeartRate_Last[3] = {0};
+uint8_t OxygenSaturationCount_Last[3] = {0};
+
+int Calculate_Risk_Level(uint32_t hr, uint32_t spo2, bool abnormal_motion_detected) {
+    int riskAll = 0;	//四次连起来的风险
+	int risk = 0;	//此次风险
+	HeartRate_Last[Risk_Count] = (float)hr;
+	OxygenSaturationCount_Last[Risk_Count] = spo2;
+	Risk_Last[Risk_Count] = risk;
+	Risk_Count++;
+
+	if(abnormal_motion_detected)
+	{
+		risk+=20;
+	}
+
+	if(Risk_Count==3)
+	{
+		// 连续的心率超过基准值20bpm
+		if(hr-Max30102_Get_Heart_Rate_Baseline()>20)
+		{
+			risk+=35;
+			if(HeartRate_Last[2]-Max30102_Get_Heart_Rate_Baseline()>20)
+			{
+				risk+=20;
+				if(HeartRate_Last[1]-Max30102_Get_Heart_Rate_Baseline()>20)
+				{
+					risk+=15;
+					if(HeartRate_Last[0]-Max30102_Get_Heart_Rate_Baseline()>20)
+						risk+=0;
+				}
+					
+			}
+		}
+		
+		if(hr<20+Max30102_Get_Heart_Rate_Baseline())
+		{
+			risk+=35;
+			if(HeartRate_Last[2]<20+Max30102_Get_Heart_Rate_Baseline())
+			{
+				risk+=25;
+				if(HeartRate_Last[1]<20+Max30102_Get_Heart_Rate_Baseline())
+				{
+					risk+=15;
+					if(HeartRate_Last[0]<20+Max30102_Get_Heart_Rate_Baseline())
+						risk+=5;
+				}
+					
+			}
+		}
+		
+		riskAll = (int)((float)risk*0.4f+(float)Risk_Last[0]*0.3f+(float)Risk_Last[1]*0.2f+(float)Risk_Last[2]*0.1f);
+		Risk_Count = 0;
+		return riskAll;
+	}
+
+	return 5;
+}
+
 // ============================================================
 // ⑩  Task_MQTT_Message_Handler
 // ============================================================
