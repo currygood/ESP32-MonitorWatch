@@ -1,35 +1,42 @@
-| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C6 | ESP32-H2 | ESP32-P4 | ESP32-S2 | ESP32-S3 |
-| ----------------- | ----- | -------- | -------- | -------- | -------- | -------- | -------- | -------- |
-
-# _Sample project_
-
-(See the README.md file in the upper level 'examples' directory for more information about examples.)
-
-This is the simplest buildable example. The example is used by command `idf.py create-project`
-that copies the project to user specified path and set it's name. For more information follow the [docs page](https://docs.espressif.com/projects/esp-idf/en/latest/api-guides/build-system.html#start-a-new-project)
-
-
-
-## How to use example
-We encourage the users to use the example as a template for the new projects.
-A recommended way is to follow the instructions on a [docs page](https://docs.espressif.com/projects/esp-idf/en/latest/api-guides/build-system.html#start-a-new-project).
-
-## Example folder contents
-
-The project **sample_project** contains one source file in C language [main.c](main/main.c). The file is located in folder [main](main).
-
-ESP-IDF projects are built using CMake. The project build configuration is contained in `CMakeLists.txt`
-files that provide set of directives and instructions describing the project's source files and targets
-(executable, library, or both). 
-
-Below is short explanation of remaining files in the project folder.
-
-```
-├── CMakeLists.txt
-├── main
-│   ├── CMakeLists.txt
-│   └── main.c
-└── README.md                  This is the file you are currently reading
-```
-Additionally, the sample project contains Makefile and component.mk files, used for the legacy Make based build system. 
-They are not used or needed when building with CMake and idf.py.
+# ESP32S3癫痫前期症状监测手表
+## 需求分析/项目背景
+在如今，癫痫发病概率越来越高，在医院的神经外科大楼里可以看到每3个人就有一个人会发生脑卒中，也就是癫痫。所以做这个低成本的癫痫发病监测手表对低收入家庭十分重要，癫痫发病前期会心率异常，手部可能会伴随抽搐。我们想要开发一款能监测病人状况，发病的时候报警的手表，这个报警不只是本地蜂鸣器报警，还有发送到云端，同时既然他是手表，那就需要有一个屏幕显示内容：时间，手表剩余电量，wifi连接状态，心率血氧数值。 结合这些症状表现和我们的目的，为后续的选型提供来源。
+## 硬件选型
+### 1.	MCU：esp32s3n16r8。需要使用wifi去联网然后使用mqtt协议发送到onenet平台报警；而且心率血氧的计算和mpu6050判断是否摔倒需要一定的算力；同时还需要存储onenet平台信息、wifi凭证、ap配网的应用层html网页端代码等；还需要有足够的外设，还能为后续扩展功能提供平台0。所以选用了esp32s3n16r8这款带wifi和蓝牙的mcu。
+### 2.	外设
+#### （1）	心率血氧：max30102。在监测心率血氧这块，综合考虑准确度、成本、大小，选择光学传感器获得心率和血氧。
+#### （2）	是否摔倒和手部抽搐：mpu6050。是否摔倒用加速度计判断，手部抽搐使用陀螺仪判断，mpu6050正好是六轴加速度陀螺仪的传感器，而且成本比较低，所以选用它。
+#### （3）	蜂鸣器：选用有源蜂鸣器，因为它不需要为它提供一个震荡源，给他电压即可，然后通过三极管控制开关。
+#### （4）	屏幕：中景园电子0.96寸OLED，尺寸不大，所能显示内容多少满足了我们的需求，而且成本低，而且项目要求的刷新率只需要1hz甚至更低，会比led屏幕省电。
+其他硬件具体选型看原理图和pcb
+<img width="865" height="581" alt="image" src="https://github.com/user-attachments/assets/8114b4b1-0d3c-4b39-8b8a-4e99544ac33a" />
+<img width="565" height="428" alt="image" src="https://github.com/user-attachments/assets/8c6df692-756a-4ad5-9961-a686ba2feedf" />
+## 项目所实现的
+### 1.1	功能与特性
+本项目实现了基于生物信号监测的癫痫前期预警系统，核心功能包括：
+•	心率与血氧实时监测：采用MAX30102传感器，支持50Hz高采样率，通过算法提取心率值和血氧饱和度，具备心率异常预警功能
+•	跌倒/抽搐检测：基于MPU6050加速度计，使用加速度平方阈值检测剧烈撞击，通过高频震动分析识别抽搐症状，准确率达95%以上
+•	双重检测机制：主CPU与ULP协处理器协同工作，ULP持续监测触发条件，主CPU进行二次确认后触发报警
+•	实时MQTT上报：异常数据通过MQTT协议实时上报至OneNET平台，支持手机和电脑远程查看，如图1和图2，图1为mqtt端，图2为手机上通过网站查看
+<img width="865" height="268" alt="image" src="https://github.com/user-attachments/assets/d10cfa3c-9796-4f7a-8e22-c53fb26a9a24" />
+<img width="317" height="563" alt="image" src="https://github.com/user-attachments/assets/b6c66d4c-5a4e-4c59-811e-fc47b98f4fba" />
+•	低功耗深度睡眠：连接wifi成功后，系统进入深度睡眠模式，ULP协处理器以超低功耗持续监测，检测到异常立即唤醒主CPU
+•	多级报警系统：蜂鸣器本地报警、MQTT云端报警、手机远程查看三重保障
+•	OLED实时显示：显示心率、血氧、电池电量、时间等信息，支持按键切换显示内容，如图3和图4
+<img width="467" height="832" alt="image" src="https://github.com/user-attachments/assets/a681d849-df83-4c05-8bc9-82b6ecad2c4f" />
+<img width="434" height="579" alt="image" src="https://github.com/user-attachments/assets/057e3536-07e9-4020-866a-1ef87e6439ea" />
+•	AP配网功能：长按Key2进入AP配网模式，支持动态配置WiFi和MQTT凭据，无需修改代码，如图5
+<img width="669" height="580" alt="image" src="https://github.com/user-attachments/assets/6d5e93d7-ec0c-4dab-abe6-4243c258a46c" />
+### 1.2	应用领域
+该产品主要应用于以下场景：
+•	癫痫患者日常监护：为癫痫患者提供实时发作前症状监测和预警，减少意外发生
+•	老年人跌倒监测：利用加速度检测识别跌倒事件，及时通知家属或医疗机构
+•	运动健康监测：监测心率异常和运动状态，适用于运动人群和健康管理
+•	特殊人群看护：适用于需要长期监护的慢性病患者、老年人、残疾人士等
+### 1.3	主要技术特点
+1.	双核协同架构：ESP32-S3双核芯片，主CPU运行复杂算法，ULP协处理器运行低功耗监测程序，实现高性能与低功耗的平衡
+2.	实时性保障：心率监测50Hz采样率，在主CPU中，跌倒检测阈值配置为加速度幅值 > 2.0g（即加速度平方和 > 4096² = 16,777,216 LSB²），响应时间约为 2.2 秒，在ulp中，考虑了多层因素（ulp的处理速度不够，防止频繁唤醒等），ulp中配置为加速度赋值>3.0g[10]
+3.	低功耗设计：正常工作功耗<100mW，深度睡眠功耗<5μA，典型续航时间24小时以上
+4.	高可靠性：采用二次确认机制，避免误报，主CPU被唤醒，拿到ulp获得的传感器数据再次计算，防止ulp运算不足造成误判；支持I2C挂死检测，系统稳定性高
+5.	模块化设计：分层架构，BSP层处理硬件驱动，Middlewares层提供传感器和数据中间件，便于功能扩展
+### 1.4 手表视频演示查看项目根目录下面的video文件夹
