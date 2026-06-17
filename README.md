@@ -39,4 +39,11 @@
 3.	低功耗设计：正常工作功耗<100mW，深度睡眠功耗<5μA，典型续航时间24小时以上
 4.	高可靠性：采用二次确认机制，避免误报，主CPU被唤醒，拿到ulp获得的传感器数据再次计算，防止ulp运算不足造成误判；支持I2C挂死检测，系统稳定性高
 5.	模块化设计：分层架构，BSP层处理硬件驱动，Middlewares层提供传感器和数据中间件，便于功能扩展
-### 1.4 手表视频演示查看项目根目录下面的video文件夹
+### 1.4 手表视频演示查看我在b站发的视频
+https://www.bilibili.com/video/BV1H3L96bEtP/?vd_source=c9924bda4031caf6f7caa15a01d9be91
+### 1.5 产品图
+<img width="3072" height="4096" alt="主页面" src="https://github.com/user-attachments/assets/2fbecda4-00f6-4e81-ab73-3de331541163" />
+<img width="3072" height="4096" alt="心率血氧显示" src="https://github.com/user-attachments/assets/5aa49567-aad2-44c0-b697-468e6c4bd64d" />
+<img width="3072" height="4096" alt="传感器图" src="https://github.com/user-attachments/assets/d9e38b68-2206-4fbe-a814-148e00b7543f" />
+<img width="3072" height="4096" alt="OLED屏幕图1" src="https://github.com/user-attachments/assets/69a3a3e8-667f-455b-8dc7-b0742928a566" />
+
