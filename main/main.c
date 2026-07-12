@@ -185,23 +185,6 @@ void app_main(void)
 	Key_Init(My_Key_Callback); // 传入 NULL 使用轮询模式，后续通过 Key_Get() 获取按键事件
 
 	vTaskDelay(pdMS_TO_TICKS(500)); 	//等待500ms，确保I2C总线和MessageQueue等设备初始化完成
-	
-	// RTC初始化
-	esp_err_t rtc_ret = Rtc_Init();
-	if(rtc_ret != ESP_OK) {
-		ESP_LOGE("APP_MAIN", "RTC 初始化失败: %s", esp_err_to_name(rtc_ret));
-	}
-
-	//获取电池电量初始化
-	Battery_Level_Init();
-
-	// 初始化蜂鸣器
-	buzzer_init(BUZZER_GPIO_NUM, BUZZER_FREQ_HZ);
-
-	// 按键初始化
-	Key_Init(My_Key_Callback); // 传入 NULL 使用轮询模式，后续通过 Key_Get() 获取按键事件
-
-	vTaskDelay(pdMS_TO_TICKS(500)); 	//等待500ms，确保I2C总线和MessageQueue等设备初始化完成
 
 	// 创建任务
 	xTaskCreatePinnedToCore(Task_MQTT_Message_Handler, "MQTT_Task", 20480, NULL, 3, &MQTT_Task_Handle, 0); 

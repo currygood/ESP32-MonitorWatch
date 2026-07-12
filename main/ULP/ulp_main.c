@@ -3,11 +3,6 @@
 #include "ulp_riscv.h"
 #include "ulp_riscv_utils.h"
 #include "ulp_riscv_i2c_ulp_core.h"
-<<<<<<< HEAD
-=======
-// #include "ulp_riscv_print.h"
-// #include "ulp_riscv_gpio.h"
->>>>>>> e085dd42cab267ed7dfa903d4539851e3a370c88
 
 /* --- 寄存器与地址定义 --- */
 #define I2C_MPU_ADDR       0x68
@@ -49,45 +44,6 @@ static int hr_abnormal_consecutive_count = 0;
 static int fall_consecutive_count = 0;
 static uint8_t firstIgnore = 4;
 
-<<<<<<< HEAD
-=======
-
-// // 串口打印
-// /**
-//  * 手动模拟 UART 发送一个字符 (Bit-banging)
-//  * 这就是 ulp_riscv_print_install 需要的 putc 函数
-//  */
-// static void soft_uart_putc(char c, void *ctx) {
-//     uint32_t pin = (uint32_t)ctx;
-
-//     // 起始位 (Start Bit): 拉低
-//     ulp_riscv_gpio_output_level(pin, 0);
-//     ulp_riscv_delay_cycles(UART_BIT_TICKS);
-
-//     // 数据位 (8-bit, LSB first)
-//     for (int i = 0; i < 8; i++) {
-//         ulp_riscv_gpio_output_level(pin, (c >> i) & 0x01);
-//         ulp_riscv_delay_cycles(UART_BIT_TICKS);
-//     }
-
-//     // 停止位 (Stop Bit): 拉高
-//     ulp_riscv_gpio_output_level(pin, 1);
-//     ulp_riscv_delay_cycles(UART_BIT_TICKS);
-// }
-// static void uart_init() {
-//     // 1. 初始化 GPIO 为输出，初始状态设为高电平（UART 空闲状态）
-//     ulp_riscv_gpio_init(UART_TX_PIN);
-//     ulp_riscv_gpio_output_enable(UART_TX_PIN);
-//     ulp_riscv_gpio_output_level(UART_TX_PIN, 1);
-
-//     // 2. 安装打印驱动
-//     // 第一个参数：我们自己写的发送函数指针
-//     // 第二个参数：传给发送函数的上下文（这里把引脚号传进去）
-//     ulp_riscv_print_install(soft_uart_putc, (void *)UART_TX_PIN);
-// }
-
-
->>>>>>> e085dd42cab267ed7dfa903d4539851e3a370c88
 /* --- 硬件 I2C 封装函数 --- */
 static void i2c_write_reg(uint8_t slave_addr, uint8_t reg_addr, uint8_t value) {
     // 注意：这里 slave_addr 直接传 0x68 或 0x57，不要左移！
@@ -154,11 +110,6 @@ int main(void) {
     firstIgnore = 4;
 
     sensors_init();
-<<<<<<< HEAD
-=======
-	// uart_init();
-	// ulp_riscv_print_str("ULP 程序已启动，进入监测循环...\n");
->>>>>>> e085dd42cab267ed7dfa903d4539851e3a370c88
 
     while(1) {
 		int i2c_error_count = 0;
