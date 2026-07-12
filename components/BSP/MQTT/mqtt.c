@@ -18,9 +18,21 @@
 #include "http_parser.h"
 #include "esp_http_server.h"
 #include "onenet_token.h"
+#include "esp_ota_ops.h"
+#include "esp_partition.h"
+#include "esp_app_format.h"
+#include "esp_sntp.h"
+#include "esp_http_client.h"
+#include "esp_https_ota.h"
+#include "esp_system.h"
 #include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
+
+#define WIFI_CONNECTED_BIT      BIT0
+#define MQTT_CONNECTED_BIT      BIT1
+#define APCFG_BIT 				BIT2
+#define OTA_BUFFER_SIZE 			1024
 
 static const char *TAG = "MQTT";
 static TaskHandle_t MQTT_Task_Handle = NULL;
@@ -35,9 +47,6 @@ static int   mqtt_error_count     = 0;
 static int   publish_error_count  = 0;
 static int   publish_success_count = 0;
 
-#define WIFI_CONNECTED_BIT      BIT0
-#define MQTT_CONNECTED_BIT      BIT1
-#define APCFG_BIT 				BIT2
 
 #define MAX_RETRY_COUNT         5
 static int   retry_count = 0;
@@ -66,7 +75,7 @@ static char current_password[CRED_PASS_MAX_LEN] = {0};
 //onenet用户名，client_id，key
 static char MQTT_username[CRED_MQTT_USER_MAX_LEN] = {0};
 static char MQTT_client_id[CRED_MQTT_CLIENT_ID_MAX_LEN] = {0};
-static char MQTT_key[CRED_MQTT_KEY_MAX_LEN] = {0};
+static char MQTT_device_key[CRED_MQTT_KEY_MAX_LEN] = {0};
 //html页面
 static const char* http_html = NULL;
 //接收回调函数
@@ -78,9 +87,56 @@ static int client_sockfd = -1;
 static TaskHandle_t Scan_Task_Handle = NULL;
 static TaskHandle_t AP_Task_Handle = NULL;
 
+// Onenet平台相关变量
+char SendTopic[TOPIC_STR_SIZE] = {0};
+char RecvSetTopic[TOPIC_STR_SIZE] = {0};
+char OTATopic[TOPIC_STR_SIZE] = {0};
+static char target_version[VERSION_STR_SIZE] = {0};
+static char onenet_product_access_key[PRODUCT_ACCESS_KEY_SIZE] = {0};
+static int task_id = 0;
+static bool ota_task_running = false;
+static SemaphoreHandle_t ota_mutex = NULL;
+
+typedef struct {
+    char buffer[OTA_BUFFER_SIZE];
+    int data_size;
+} ota_http_context_t;
+
+// 函数前向声明
+esp_err_t onenet_ota_upload_version(void);
+void set_app_valid(int valid);
+void onenet_ota_update(void);
+static void mqtt_onenet_subscribe(void);
+static esp_err_t MQTT_Solve_OnenetMessage(cJSON *json, const char *topic);
+static esp_err_t MQTT_Onenet_Ack(const char *id,int code,const char* msg);
+static esp_err_t MQTT_Onenet_OTA_Ack(const char *id,int code,const char* msg);
+
+void MQTT_Get_SendTopic(char* topic)
+{
+	strncpy(topic, SendTopic, sizeof(topic));
+}
+
+void MQTT_Get_RecvSetTopic(char* topic)
+{
+	strncpy(topic, RecvSetTopic, sizeof(topic));
+}
+
+void MQTT_Get_OTATopic(char* topic)
+{
+	strncpy(topic, OTATopic, sizeof(topic));
+}
+
 esp_mqtt_client_handle_t MQTT_Give()
 {
 	return mqtt_client;
+}
+
+static const char *get_product_access_key(void)
+{
+    if (onenet_product_access_key[0] != '\0') {
+        return onenet_product_access_key;
+    }
+    return DEFAULT_ONENET_PRODUCT_ACCESS_KEY;
 }
 
 // ============================================================
@@ -99,8 +155,8 @@ esp_err_t NVS_Save_Wifi_Credentials(const char *ssid, const char *pass)
         return err;
     }
 
-    err = nvs_set_str(handle, NVS_KEY_WIFI_SSID, ssid);
-    if (err == ESP_OK) err = nvs_set_str(handle, NVS_KEY_WIFI_PASS, pass);
+    err = nvs_set_str(handle, NVS_WIFI_SSID, ssid);
+    if (err == ESP_OK) err = nvs_set_str(handle, NVS_WIFI_PASS, pass);
     if (err == ESP_OK) err = nvs_commit(handle);
 
     nvs_close(handle);
@@ -122,9 +178,9 @@ esp_err_t NVS_Load_Wifi_Credentials(char *ssid, size_t ssid_len,
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
     if (err != ESP_OK) return err;
 
-    err = nvs_get_str(handle, NVS_KEY_WIFI_SSID, ssid, &ssid_len);
+    err = nvs_get_str(handle, NVS_WIFI_SSID, ssid, &ssid_len);
     if (err == ESP_OK) {
-        err = nvs_get_str(handle, NVS_KEY_WIFI_PASS, pass, &pass_len);
+        err = nvs_get_str(handle, NVS_WIFI_PASS, pass, &pass_len);
     }
     nvs_close(handle);
     return err;
@@ -133,15 +189,16 @@ esp_err_t NVS_Load_Wifi_Credentials(char *ssid, size_t ssid_len,
 /**
  * @brief 将 MQTT 用户名/密码 client_id 写入 NVS
  */
-esp_err_t NVS_Save_MQTT_Credentials(const char *username, const char *password,const char* client_id)
+esp_err_t NVS_Save_MQTT_Credentials(const char *username, const char *client_id,const char* key,const char* product_access_key)
 {
     nvs_handle_t handle;
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
     if (err != ESP_OK) return err;
 
-    err = nvs_set_str(handle, NVS_KEY_MQTT_USER, username);
-    if (err == ESP_OK) err = nvs_set_str(handle, NVS_KEY_MQTT_PASS, password);
-    if (err == ESP_OK) err = nvs_set_str(handle, NVS_KEY_MQTT_CLIENT_ID, client_id);
+    err = nvs_set_str(handle, NVS_MQTT_USER, username);
+	if (err == ESP_OK) err = nvs_set_str(handle, NVS_MQTT_CLIENT_ID, client_id);
+    if (err == ESP_OK) err = nvs_set_str(handle, NVS_MQTT_KEY, key);
+	if (err == ESP_OK) err = nvs_set_str(handle, NVS_MQTT_PRODUCT_ACCESS_KEY, product_access_key);
     if (err == ESP_OK) err = nvs_commit(handle);
 
     nvs_close(handle);
@@ -157,19 +214,23 @@ esp_err_t NVS_Save_MQTT_Credentials(const char *username, const char *password,c
  * @brief 从 NVS 读取 MQTT 用户名/密码 client_id
  */
 esp_err_t NVS_Load_MQTT_Credentials(char *username, size_t user_len,
-                                     char *password, size_t pass_len,
-                                     char *client_id, size_t client_id_len)
+                                     char *client_id, size_t client_id_len,
+                                     char *key, size_t key_len,
+									 char *product_access_key, size_t product_access_key_len)
 {
     nvs_handle_t handle;
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
     if (err != ESP_OK) return err;
 
-    err = nvs_get_str(handle, NVS_KEY_MQTT_USER, username, &user_len);
+    err = nvs_get_str(handle, NVS_MQTT_USER, username, &user_len);
     if (err == ESP_OK) {
-        err = nvs_get_str(handle, NVS_KEY_MQTT_PASS, password, &pass_len);
+        err = nvs_get_str(handle, NVS_MQTT_CLIENT_ID, client_id, &client_id_len);
     }
     if (err == ESP_OK) {
-        err = nvs_get_str(handle, NVS_KEY_MQTT_CLIENT_ID, client_id, &client_id_len);
+        err = nvs_get_str(handle, NVS_MQTT_KEY, key, &key_len);
+    }
+	if (err == ESP_OK) {
+        err = nvs_get_str(handle, NVS_MQTT_PRODUCT_ACCESS_KEY, product_access_key, &product_access_key_len);
     }
     nvs_close(handle);
     return err;
@@ -177,7 +238,7 @@ esp_err_t NVS_Load_MQTT_Credentials(char *username, size_t user_len,
 
 /**
  * @brief 检查 NVS 中是否已存有 WiFi 凭据
- */
+*/
 bool NVS_Has_Wifi_Credentials(void)
 {
     nvs_handle_t handle;
@@ -185,7 +246,7 @@ bool NVS_Has_Wifi_Credentials(void)
         return false;
     }
     uint8_t done = 0;
-    esp_err_t err = nvs_get_u8(handle, NVS_KEY_PROV_DONE, &done);
+    esp_err_t err = nvs_get_u8(handle, NVS_PROV_DONE, &done);
     nvs_close(handle);
     return (err == ESP_OK && done == 1);
 }
@@ -199,12 +260,13 @@ esp_err_t NVS_Clear_All_Credentials(void)
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
     if (err != ESP_OK) return err;
 
-    nvs_erase_key(handle, NVS_KEY_WIFI_SSID);
-    nvs_erase_key(handle, NVS_KEY_WIFI_PASS);
-    nvs_erase_key(handle, NVS_KEY_MQTT_USER);
-    nvs_erase_key(handle, NVS_KEY_MQTT_PASS);
-	nvs_erase_key(handle, NVS_KEY_MQTT_CLIENT_ID);
-    nvs_erase_key(handle, NVS_KEY_PROV_DONE);
+    nvs_erase_key(handle, NVS_WIFI_SSID);
+    nvs_erase_key(handle, NVS_WIFI_PASS);
+    nvs_erase_key(handle, NVS_MQTT_USER);
+	nvs_erase_key(handle, NVS_MQTT_CLIENT_ID);
+    nvs_erase_key(handle, NVS_MQTT_KEY);
+	nvs_erase_key(handle, NVS_MQTT_PRODUCT_ACCESS_KEY);
+    nvs_erase_key(handle, NVS_PROV_DONE);
     err = nvs_commit(handle);
     nvs_close(handle);
 
@@ -241,45 +303,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
     }
 }
 
-static void mqtt_event_handler(void *arg, esp_event_base_t base,
-                                int32_t id, void *data)
-{
-    esp_mqtt_event_handle_t event = data;
-    switch (id) {
-        case MQTT_EVENT_CONNECTED:
-            ESP_LOGW(TAG, ">>> MQTT 连接成功！");
-            mqtt_connected = true;
-            break;
-        case MQTT_EVENT_DISCONNECTED:
-            ESP_LOGW(TAG, "MQTT 断开，5秒后尝试重连...");
-            mqtt_connected = false;
-            vTaskDelay(pdMS_TO_TICKS(5000));
-            esp_mqtt_client_reconnect(mqtt_client);
-            break;
-        case MQTT_EVENT_PUBLISHED:
-            ESP_LOGD(TAG, "发布成功 msg_id=%d", event->msg_id);
-            break;
-        case MQTT_EVENT_DATA:
-            ESP_LOGI(TAG, "收到消息 主题: %.*s | 数据: %.*s",
-                     event->topic_len, event->topic,
-                     event->data_len, event->data);
-            break;
-        case MQTT_EVENT_ERROR:
-            mqtt_error_count++;
-            if (mqtt_error_count % ERROR_LOG_INTERVAL == 1) {
-                ESP_LOGE(TAG, "MQTT 错误 (计数: %d)", mqtt_error_count);
-                if (event->error_handle) {
-                    ESP_LOGE(TAG, "  错误类型: %d  连接返回码: %d",
-                             event->error_handle->error_type,
-                             event->error_handle->connect_return_code);
-                }
-            }
-            break;
-        default:
-            ESP_LOGD(TAG, "MQTT 事件 id=%ld", id);
-            break;
-    }
-}
+
 
 
 // ============================================================
@@ -723,6 +747,7 @@ static void ws_receive_handle(uint8_t* payload, int len)
         cJSON* username_js = cJSON_GetObjectItem(root, "username");
         cJSON* client_id_js = cJSON_GetObjectItem(root, "client_id");
         cJSON* key_js = cJSON_GetObjectItem(root, "key");
+        cJSON* product_key_js = cJSON_GetObjectItem(root, "onenet_product_access_key");
 
          // 只有当所有字段都存在时才进行保存和触发事件
 		if(ssid_js && password_js && username_js && client_id_js && key_js)
@@ -734,7 +759,9 @@ static void ws_receive_handle(uint8_t* payload, int len)
 			// 拷贝 MQTT 信息
 			snprintf(MQTT_username, sizeof(MQTT_username), "%s", username_js->valuestring);
 			snprintf(MQTT_client_id, sizeof(MQTT_client_id), "%s", client_id_js->valuestring);
-			snprintf(MQTT_key, sizeof(MQTT_key), "%s", key_js->valuestring);
+			snprintf(MQTT_device_key, sizeof(MQTT_device_key), "%s", key_js->valuestring);
+			snprintf(onenet_product_access_key,sizeof(onenet_product_access_key),"%s",product_key_js->valuestring);
+
 
 			ESP_LOGI(TAG, "Config Received! WiFi:%s, MQTT_User:%s", current_ssid, MQTT_username);
 			
@@ -900,6 +927,136 @@ uint8_t Wifi_Init(void)
     return WAITING_FOR_AP_PROVISIONING;
 }
 
+static void mqtt_event_handler(void *arg, esp_event_base_t base,
+                                int32_t id, void *data)
+{
+    esp_mqtt_event_handle_t event = data;
+    switch (id) {
+        case MQTT_EVENT_CONNECTED:
+            ESP_LOGW(TAG, ">>> MQTT 连接成功！");
+            mqtt_connected = true;
+			// 连接成功后，订阅主题
+			mqtt_onenet_subscribe();
+			// 发送一次ota版本号
+			onenet_ota_upload_version();
+			set_app_valid(1);
+            break;
+        case MQTT_EVENT_DISCONNECTED:
+            ESP_LOGW(TAG, "MQTT 断开，5秒后尝试重连...");
+            mqtt_connected = false;
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            esp_mqtt_client_reconnect(mqtt_client);
+            break;
+        case MQTT_EVENT_PUBLISHED:
+            ESP_LOGD(TAG, "发布成功 msg_id=%d", event->msg_id);
+            break;
+        case MQTT_EVENT_DATA:
+            ESP_LOGI(TAG, "收到消息 主题: %.*s | 数据: %.*s",
+                     event->topic_len, event->topic,
+                     event->data_len, event->data);
+			// 处理收到的消息
+			if(strncmp(event->topic, RecvSetTopic, event->topic_len) == 0 &&
+			   strlen(RecvSetTopic) == (size_t)event->topic_len)	//设置
+			{
+				static char data_buf[512] = {0};
+				strncpy(data_buf, event->data, sizeof(data_buf)-1);
+
+				cJSON *json = cJSON_Parse(data_buf);
+				if(json == NULL)
+				{
+					ESP_LOGE(TAG, "JSON解析失败");
+				}
+				else
+				{
+					cJSON *id_js = cJSON_GetObjectItem(json, "id");
+					const char *msg_id = (id_js != NULL) ? id_js->valuestring : "unknown";
+
+					if(MQTT_Solve_OnenetMessage(json, RecvSetTopic) != ESP_OK)
+					{
+						ESP_LOGE(TAG, "参数解析失败");
+						MQTT_Onenet_Ack(msg_id, 404, "参数解析失败");
+					}
+					else
+					{
+						ESP_LOGI(TAG, "参数解析成功");
+						MQTT_Onenet_Ack(msg_id, 200, "处理成功");
+					}
+
+					cJSON_Delete(json);
+				}
+			}
+			else if(strncmp(event->topic, OTATopic, event->topic_len) == 0 &&
+			   strlen(OTATopic) == (size_t)event->topic_len)	//OTA
+			{
+				ESP_LOGI(TAG, ">>> 收到 OTA 升级通知！Topic 匹配成功！");
+				ESP_LOGI(TAG, "OTA 消息数据: %.*s", event->data_len, (char*)event->data);
+
+				char data_buf[512] = {0};
+				strncpy(data_buf, event->data, sizeof(data_buf)-1);
+
+				cJSON *json = cJSON_Parse(data_buf);
+				if(json == NULL)
+				{
+					ESP_LOGE(TAG, "OTA JSON解析失败! 原始数据: %s", data_buf);
+				}
+				else
+				{
+					cJSON *id_js = cJSON_GetObjectItem(json, "id");
+					const char *msg_id = (id_js != NULL) ? id_js->valuestring : "unknown";
+
+					ESP_LOGI(TAG, "OTA 消息ID: %s, 正在回复ACK...", msg_id);
+					MQTT_Onenet_OTA_Ack(msg_id, 200, "处理成功");
+					cJSON_Delete(json);
+
+					ESP_LOGI(TAG, ">>> 收到OTA升级通知，发送任务通知给MQTT主任务...");
+					if(MQTT_Task_Handle != NULL)
+					{
+						BaseType_t notify_result = xTaskNotify(MQTT_Task_Handle, OTA_Upgrade_Requested, eSetValueWithOverwrite);
+
+						if(notify_result == pdPASS)
+						{
+							ESP_LOGI(TAG, "✅ OTA升级任务通知已发送，将在MQTT主任务中异步处理");
+						}
+						else
+						{
+							ESP_LOGE(TAG, "❌ 发送OTA任务通知失败!");
+						}
+					}
+					else
+					{
+						ESP_LOGE(TAG, "❌ MQTT_Task_Handle为NULL，无法发送OTA通知!");
+					}
+				}
+			}
+			else
+			{
+				// 调试：显示不匹配的 topic（仅在收到 ota/inform 时）
+				if(strstr(event->topic, "ota/inform") != NULL)
+				{
+					ESP_LOGW(TAG, "⚠️ 收到OTA通知但Topic不匹配!");
+					ESP_LOGW(TAG, "   收到的Topic: %.*s (长度:%d)", event->topic_len, (char*)event->topic, event->topic_len);
+					ESP_LOGW(TAG, "   期望的Topic: %s (长度:%d)", OTATopic, strlen(OTATopic));
+				}
+			}
+            break;
+        case MQTT_EVENT_ERROR:
+            mqtt_error_count++;
+            if (mqtt_error_count % ERROR_LOG_INTERVAL == 1) {
+                ESP_LOGE(TAG, "MQTT 错误 (计数: %d)", mqtt_error_count);
+                if (event->error_handle) {
+                    ESP_LOGE(TAG, "  错误类型: %d  连接返回码: %d",
+                             event->error_handle->error_type,
+                             event->error_handle->connect_return_code);
+                }
+            }
+            break;
+        default:
+            ESP_LOGD(TAG, "MQTT 事件 id=%ld", id);
+            break;
+    }
+}
+
+
 // ============================================================
 // ⑦  MQTT_App_Start：从 NVS 读取 MQTT 凭据
 // ============================================================
@@ -915,32 +1072,53 @@ typedef enum
 esp_err_t MQTT_App_Start(uint8_t choice)
 {
     ESP_LOGW(TAG, ">>> 初始化 MQTT 客户端...");
+	static char token[CRED_MQTT_KEY_MAX_LEN] = {0};		//onenet平台凭证
 	static char mqtt_user[CRED_MQTT_USER_MAX_LEN] = {0};
-    static char mqtt_pass[CRED_MQTT_PASS_MAX_LEN] = {0};
 	static char mqtt_client_id[CRED_MQTT_CLIENT_ID_MAX_LEN] = {0};
+	static char mqtt_key[CRED_MQTT_KEY_MAX_LEN] = {0};
+	static char mqtt_product_access[CRED_MQTT_KEY_MAX_LEN] = {0};
+
 	if(choice == 0)	// 从 NVS 读取 MQTT 凭据，读不到则使用默认值
 	{
 		if (NVS_Load_MQTT_Credentials(mqtt_user, sizeof(mqtt_user),
-                                   mqtt_pass, sizeof(mqtt_pass),
-                                   mqtt_client_id, sizeof(mqtt_client_id)) == ESP_OK) {
+                                   mqtt_client_id, sizeof(mqtt_client_id),
+                                   mqtt_key, sizeof(mqtt_key),
+                                   mqtt_product_access, sizeof(mqtt_product_access)) == ESP_OK) {
 			ESP_LOGI(TAG, "✅ 使用 NVS 存储的 MQTT 凭据  User: %s", mqtt_user);
 		} else {
 			ESP_LOGW(TAG, "⚠️ NVS 无 MQTT 凭据，使用默认值");
 			strlcpy(mqtt_user, DEFAULT_MQTT_USERNAME, sizeof(mqtt_user));
-			strlcpy(mqtt_pass, DEFAULT_MQTT_PASSWORD, sizeof(mqtt_pass));
 			strlcpy(mqtt_client_id, DEFAULT_MQTT_CLIENT_ID, sizeof(mqtt_client_id));
+			strlcpy(mqtt_key,DEFUALT_MQTT_KEY,sizeof(mqtt_key));
+			strlcpy(mqtt_product_access, DEFAULT_ONENET_PRODUCT_ACCESS_KEY, sizeof(mqtt_product_access));
 		}
+		snprintf(SendTopic, sizeof(SendTopic), "$sys/%s/%s/thing/property/post", mqtt_user, mqtt_client_id);
+		snprintf(RecvSetTopic, sizeof(RecvSetTopic), "$sys/%s/%s/thing/property/set", mqtt_user, mqtt_client_id);
+		snprintf(OTATopic, sizeof(OTATopic), "$sys/%s/%s/ota/inform", mqtt_user, mqtt_client_id);
+		// 保存onenet平台凭证到全局变量
+		strlcpy(onenet_product_access_key, mqtt_product_access, sizeof(onenet_product_access_key));
+		strlcpy(MQTT_username, mqtt_user, sizeof(MQTT_username));
+		strlcpy(MQTT_client_id, mqtt_client_id, sizeof(MQTT_client_id));
+		// 生成onenet平台凭证
+		dev_token_generate(token, SIG_METHOD_SHA256, 2147483600, mqtt_user, mqtt_client_id, mqtt_key);
 	}
 	else if(choice==1)
 	{
 		strlcpy(mqtt_user, MQTT_username, sizeof(MQTT_username));
 		strlcpy(mqtt_client_id, MQTT_client_id, sizeof(MQTT_client_id));
-		dev_token_generate(mqtt_pass,SIG_METHOD_SHA256, 2147483600,MQTT_username,MQTT_client_id,MQTT_key);
+		strlcpy(mqtt_product_access, onenet_product_access_key, sizeof(mqtt_product_access));
+		strlcpy(mqtt_key,MQTT_device_key,sizeof(mqtt_key));
+		snprintf(SendTopic, sizeof(SendTopic), "$sys/%s/%s/thing/property/post", MQTT_username,MQTT_client_id);
+		snprintf(RecvSetTopic, sizeof(RecvSetTopic), "$sys/%s/%s/thing/property/set", MQTT_username,MQTT_client_id);
+		snprintf(OTATopic, sizeof(OTATopic), "$sys/%s/%s/ota/inform", MQTT_username,MQTT_client_id);
+
+		dev_token_generate(token,SIG_METHOD_SHA256, 2147483600,MQTT_username,MQTT_client_id,mqtt_key);
 		NVS_Save_Wifi_Credentials(current_ssid,current_password);
-		NVS_Save_MQTT_Credentials(mqtt_user,mqtt_pass,mqtt_client_id);
+		NVS_Save_MQTT_Credentials(mqtt_user,mqtt_client_id,mqtt_key,mqtt_product_access);
+
 		nvs_handle_t handle;
 		if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
-			nvs_set_u8(handle, NVS_KEY_PROV_DONE, 1); // 设置配网完成标志
+			nvs_set_u8(handle, NVS_PROV_DONE, 1); // 设置配网完成标志
 			nvs_commit(handle);
 			nvs_close(handle);
 		}
@@ -952,7 +1130,8 @@ esp_err_t MQTT_App_Start(uint8_t choice)
 		.broker.address.transport       = MQTT_TRANSPORT_OVER_TCP,
 		.credentials.client_id          = mqtt_client_id,
 		.credentials.username           = mqtt_user,
-		.credentials.authentication.password = mqtt_pass,
+		.credentials.authentication.password = token,
+		.task.stack_size                = 10240,
 	};
 
 	mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
@@ -1064,7 +1243,755 @@ int Calculate_Risk_Level(uint32_t hr, uint32_t spo2, bool abnormal_motion_detect
 }
 
 // ============================================================
-// ⑩  Task_MQTT_Message_Handler
+// ⑩  OTA
+// ============================================================
+
+static void mqtt_onenet_subscribe(void)
+{
+	char topic[512];
+
+	//订阅上报属性主题
+    snprintf(topic,sizeof(topic),"$sys/%s/%s/thing/property/post", MQTT_username, MQTT_client_id);
+	esp_mqtt_client_subscribe_single(mqtt_client, topic, 0);
+
+	//订阅设置属性主题
+	snprintf(topic,sizeof(topic),"$sys/%s/%s/thing/property/set", MQTT_username, MQTT_client_id);
+	esp_mqtt_client_subscribe_single(mqtt_client, topic, 0);
+
+	//订阅OTA升级主题
+	snprintf(topic,sizeof(topic),"$sys/%s/%s/ota/inform", MQTT_username, MQTT_client_id);
+	esp_mqtt_client_subscribe_single(mqtt_client, topic, 0);
+}
+
+static esp_err_t MQTT_Solve_OnenetMessage(cJSON *json, const char *topic)
+{
+	/*
+	{
+		"id": "123",
+		"version": "1.0",
+		"params": {
+			"BrightValue":500
+		}
+	}
+	*/
+
+	cJSON *param_js = cJSON_GetObjectItem(json, "params");
+	if(param_js == NULL)
+	{
+		ESP_LOGE(TAG, "params is NULL");
+		return ESP_FAIL;
+	}
+	else
+	{
+		cJSON *BrightValue_js = cJSON_GetObjectItem(param_js, "BrightValue");
+		if(BrightValue_js == NULL)
+		{
+			ESP_LOGE(TAG, "BrightValue is NULL");
+			return ESP_FAIL;
+		}
+		else
+		{
+			int BrightValue = BrightValue_js->valueint;
+			ESP_LOGI(TAG, "BrightValue: %d", BrightValue);
+		}
+	}
+	return ESP_OK;
+}
+
+static esp_err_t MQTT_Onenet_Ack(const char *id,int code,const char* msg)
+{
+	static char topic[512];
+	snprintf(topic, sizeof(topic), "$sys/%s/%s/thing/property/set_reply", MQTT_username, MQTT_client_id);
+
+	// 发布ack消息
+	cJSON *reply_js = cJSON_CreateObject();
+	cJSON_AddStringToObject(reply_js, "id", id);
+	cJSON_AddNumberToObject(reply_js, "code", code);
+	cJSON_AddStringToObject(reply_js, "msg", msg);
+	char *reply_str = cJSON_Print(reply_js);
+	if(reply_str == NULL)
+	{
+		ESP_LOGE(TAG, "cJSON_Print failed");
+		return ESP_FAIL;
+	}
+	else
+	{
+		ESP_LOGI(TAG, "发布ack消息: %s", reply_str);
+		if(MQTT_Publish(topic, reply_str, strlen(reply_str)) != ESP_OK)
+		{
+			return ESP_FAIL;
+		}
+	}
+
+	cJSON_Delete(reply_js);
+	free(reply_str);
+
+	return ESP_OK;
+}
+
+static esp_err_t MQTT_Onenet_OTA_Ack(const char *id,int code,const char* msg)
+{
+	static char topic[512];
+	snprintf(topic, sizeof(topic), "$sys/%s/%s/ota/inform_reply", MQTT_username, MQTT_client_id);
+
+	// 发布ack消息
+	cJSON *reply_js = cJSON_CreateObject();
+	cJSON_AddStringToObject(reply_js, "id", id);
+	cJSON_AddNumberToObject(reply_js, "code", code);
+	cJSON_AddStringToObject(reply_js, "msg", msg);
+	char *reply_str = cJSON_Print(reply_js);
+	if(reply_str == NULL)
+	{
+		ESP_LOGE(TAG, "cJSON_Print failed");
+		return ESP_FAIL;
+	}
+	else
+	{
+		ESP_LOGI(TAG, "发布ack消息: %s", reply_str);
+		if(MQTT_Publish(topic, reply_str, strlen(reply_str)) != ESP_OK)
+		{
+			return ESP_FAIL;
+		}
+	}
+
+	cJSON_Delete(reply_js);
+	free(reply_str);
+
+	return ESP_OK;
+}
+
+const char *get_app_version(void)
+{
+	static char app_version[32] = {0};
+	if(app_version[0] == 0)
+	{
+		const esp_partition_t *running_part = esp_ota_get_running_partition();
+		if(running_part == NULL)
+		{
+			ESP_LOGE(TAG, "running_part is NULL");
+			return NULL;
+		}
+		
+		esp_app_desc_t app_desc;
+		esp_ota_get_partition_description(running_part, &app_desc);
+		snprintf(app_version, sizeof(app_version), "%s", app_desc.version);
+	}
+	return app_version;
+}
+
+void set_app_valid(int valid)
+{
+	const esp_partition_t *running_part = esp_ota_get_running_partition();
+	esp_ota_img_states_t state;
+	if(esp_ota_get_state_partition(running_part, &state)==ESP_OK)
+	{
+		if(state == ESP_OTA_IMG_PENDING_VERIFY)
+		{
+			if(valid)
+			{
+				esp_ota_mark_app_valid_cancel_rollback();
+			}
+			else
+			{
+				esp_ota_mark_app_invalid_rollback_and_reboot();
+			}
+		}
+	}
+}
+
+esp_err_t http_event_handler(esp_http_client_event_t *evt)
+{
+	ota_http_context_t *ctx = (ota_http_context_t *)evt->user_data;
+
+	switch(evt->event_id)
+	{
+		case HTTP_EVENT_ERROR:
+			if(ctx) ESP_LOGE(TAG, "HTTP错误");
+			break;
+
+		case HTTP_EVENT_ON_CONNECTED:
+			if(ctx)
+			{
+				memset(ctx->buffer, 0, OTA_BUFFER_SIZE);
+				ctx->data_size = 0;
+			}
+			break;
+
+		case HTTP_EVENT_HEADER_SENT:
+			break;
+
+		case HTTP_EVENT_ON_HEADER:
+			break;
+
+		case HTTP_EVENT_ON_DATA:
+			if(ctx == NULL)
+			{
+				ESP_LOGE(TAG, "OTA上下文为NULL!");
+				return ESP_FAIL;
+			}
+
+			int copy_len = 0;
+			if(evt->data_len > OTA_BUFFER_SIZE - ctx->data_size)
+			{
+				copy_len = OTA_BUFFER_SIZE - ctx->data_size;
+				ESP_LOGW(TAG, "OTA缓冲区不足! 已接收:%d, 新数据:%d, 剩余空间:%d",
+				         ctx->data_size, evt->data_len, OTA_BUFFER_SIZE - ctx->data_size);
+			}
+			else
+			{
+				copy_len = evt->data_len;
+			}
+
+			memcpy(ctx->buffer + ctx->data_size, evt->data, copy_len);
+			ctx->data_size += copy_len;
+			ESP_LOGI(TAG, "OTA数据: 已接收%d字节 (本次%d字节)", ctx->data_size, copy_len);
+			break;
+
+		case HTTP_EVENT_ON_FINISH:
+			if(ctx)
+			{
+				ESP_LOGI(TAG, "HTTP请求完成, 总共接收%d字节", ctx->data_size);
+			}
+			break;
+
+		case HTTP_EVENT_DISCONNECTED:
+			break;
+
+		case HTTP_EVENT_REDIRECT:
+			break;
+
+		default:
+			break;
+	}
+	return ESP_OK;
+}
+
+
+static esp_err_t onenet_ota_http_connect(const char *url,esp_http_client_method_t  method,const char *playload, char *output_buffer, int *output_size)
+{
+	esp_err_t err;
+	static char token[512];
+	memset(token, 0, sizeof(token));
+
+	static ota_http_context_t ctx_stack;
+	ota_http_context_t *ctx = &ctx_stack;
+	memset(ctx, 0, sizeof(ota_http_context_t));
+
+	esp_http_client_config_t config = {
+		.url = url,
+		.event_handler = http_event_handler,
+		.user_data = ctx,
+	};
+
+	esp_http_client_handle_t http_client = esp_http_client_init(&config);
+
+	const char *product_access_key = get_product_access_key();
+	ESP_LOGI(TAG, "产品AccessKey: %s", product_access_key);
+	ESP_LOGI(TAG, "AccessKey 长度: %d 字节", strlen(product_access_key));
+
+	dev_token_generate(token, SIG_METHOD_SHA256,2099279887,MQTT_username,NULL,product_access_key);
+
+	ESP_LOGI(TAG, "生成的OTA Token: %s", token);
+
+	//Post
+	esp_http_client_set_method(http_client, method);
+	esp_http_client_set_header(http_client, "Content-Type", "application/json");
+
+	if(strlen(token) > 0)
+	{
+		ESP_LOGI(TAG, "Token长度: %d 字节", strlen(token));
+		ESP_LOGI(TAG, "Authorization Header: %s", token);
+
+		esp_err_t set_result = esp_http_client_set_header(http_client, "Authorization", token);
+		if(set_result != ESP_OK)
+		{
+			ESP_LOGE(TAG, "设置Authorization失败! 错误码: 0x%x", set_result);
+		}
+		else
+		{
+			ESP_LOGI(TAG, "设置Authorization成功");
+		}
+	}
+	else
+	{
+		ESP_LOGE(TAG, "Token生成失败!");
+	}
+
+	// 注意：不要手动设置Host header，ESP-IDF会自动从URL解析
+	if(playload)
+	{
+		ESP_LOGI(TAG, "post data:%s",playload);
+		esp_http_client_set_post_field(http_client, playload, strlen(playload));
+	}
+
+	err = esp_http_client_perform(http_client);
+
+	if(err == ESP_OK && output_buffer && output_size)
+	{
+		int copy_len = (ctx->data_size < OTA_BUFFER_SIZE) ? ctx->data_size : OTA_BUFFER_SIZE - 1;
+		memcpy(output_buffer, ctx->buffer, copy_len);
+		output_buffer[copy_len] = '\0';
+		*output_size = ctx->data_size;
+		ESP_LOGI(TAG, "HTTP请求成功, 复制%d字节到输出缓冲区", copy_len);
+	}
+
+	esp_http_client_cleanup(http_client);
+	return err;
+}
+
+// 上报版本号
+esp_err_t onenet_ota_upload_version(void)
+{
+	char url[512]={0};
+	char version[256]={0};
+	static char response_buffer[OTA_BUFFER_SIZE] = {0};
+	int response_size = 0;
+	const char *app_version = get_app_version();
+	ESP_LOGI(TAG, "开始上报版本: 产品ID=%s, 设备名=%s", MQTT_username, MQTT_client_id);
+	snprintf(url,sizeof(url),ONENE_OTA_URL_FORMAT"%s/%s/version",MQTT_username,MQTT_client_id);
+	ESP_LOGI(TAG, "OTA API URL: %s", url);
+	snprintf(version,sizeof(version),"{\"s_version\":\"%s\",\"f_version\":\"%s\"}",app_version,app_version);
+	if(onenet_ota_http_connect(url,HTTP_METHOD_POST,version, response_buffer, &response_size) == ESP_OK)
+	{
+		ESP_LOGI(TAG, "版本上传API响应: %s (%d字节)", response_buffer, response_size);
+		cJSON *root = cJSON_Parse(response_buffer);
+
+		if(root)
+		{
+			cJSON *code_js = cJSON_GetObjectItem(root, "code");
+			cJSON *msg_js = cJSON_GetObjectItem(root, "msg");
+
+			if(code_js)
+			{
+				int code = (int)cJSON_GetNumberValue(code_js);
+				const char *msg = msg_js ? cJSON_GetStringValue(msg_js) : "unknown";
+
+				if(code == 0)
+				{
+					cJSON *data_js = cJSON_GetObjectItem(root, "data");
+					if(data_js)
+					{
+						cJSON *target_js = cJSON_GetObjectItem(data_js, "target");
+						cJSON *tid_js = cJSON_GetObjectItem(data_js, "tid");
+
+						if(target_js && tid_js)
+						{
+							snprintf(target_version, sizeof(target_version), "%s", cJSON_GetStringValue(target_js));
+							task_id = (int)cJSON_GetNumberValue(tid_js);
+							ESP_LOGI(TAG, "Upload version success! 当前版本:%s, 目标版本:%s, 任务ID:%d", app_version, target_version, task_id);
+						}
+						else
+						{
+							ESP_LOGW(TAG, "版本上传成功但无升级任务: code=%d, msg=%s", code, msg);
+						}
+					}
+					cJSON_Delete(root);
+					return ESP_OK;
+				}
+				else
+				{
+					ESP_LOGE(TAG, "版本上传失败! code=%d, msg=%s", code, msg);
+				}
+			}
+			else
+			{
+				ESP_LOGE(TAG, "版本上传响应格式错误!");
+			}
+			cJSON_Delete(root);
+		}
+		else
+		{
+			ESP_LOGE(TAG, "版本上传JSON解析失败! 原始数据: %s", response_buffer);
+		}
+	}
+	ESP_LOGE(TAG, "Check version fail!");
+	return ESP_FAIL;
+}
+
+// 检测升级任务
+esp_err_t onenet_ota_check_task(const char *type,const char *version)
+{
+	char url[512]={0};
+	static char response_buffer[OTA_BUFFER_SIZE] = {0};
+	int response_size = 0;
+	snprintf(url,sizeof(url),ONENE_OTA_URL_FORMAT"%s/%s/check?type=%s&version=%s",MQTT_username,MQTT_client_id,type,version);
+	ESP_LOGI(TAG, "检查升级任务 URL: %s", url);
+
+	if(onenet_ota_http_connect(url,HTTP_METHOD_GET,NULL, response_buffer, &response_size) == ESP_OK)
+	{
+		ESP_LOGI(TAG, "检查升级任务响应: %s (%d字节)", response_buffer, response_size);
+
+		cJSON *root = cJSON_Parse(response_buffer);
+
+		if(root)
+		{
+			cJSON *code_js = cJSON_GetObjectItem(root, "code");
+			cJSON *msg_js = cJSON_GetObjectItem(root, "msg");
+
+			if(code_js && cJSON_GetNumberValue(code_js) == 0)
+			{
+				// 解析 data 对象获取任务信息
+				cJSON *data_js = cJSON_GetObjectItem(root, "data");
+				if(data_js)
+				{
+					cJSON *target_js = cJSON_GetObjectItem(data_js, "target");
+					cJSON *tid_js = cJSON_GetObjectItem(data_js, "tid");
+
+					if(target_js && tid_js)
+					{
+						snprintf(target_version, sizeof(target_version), "%s", cJSON_GetStringValue(target_js));
+						task_id = (int)cJSON_GetNumberValue(tid_js);
+						ESP_LOGI(TAG, "发现升级任务! 目标版本:%s, 任务ID:%d", target_version, task_id);
+						cJSON_Delete(root);
+						return ESP_OK;
+					}
+					else
+					{
+						ESP_LOGW(TAG, "API返回成功但无升级任务数据 (可能版本相同)");
+					}
+				}
+				else
+				{
+					ESP_LOGW(TAG, "API返回成功但无data字段");
+				}
+
+				const char *msg = msg_js ? cJSON_GetStringValue(msg_js) : "unknown";
+				ESP_LOGI(TAG, "Check task success: code=0, msg=%s", msg);
+				cJSON_Delete(root);
+				return ESP_OK;
+			}
+			else
+			{
+				int code = (int)cJSON_GetNumberValue(code_js);
+				const char *msg = msg_js ? cJSON_GetStringValue(msg_js) : "unknown";
+				ESP_LOGE(TAG, "检查升级任务失败! code=%d, msg=%s", code, msg);
+			}
+			cJSON_Delete(root);
+		}
+		else
+		{
+			ESP_LOGE(TAG, "检查升级任务JSON解析失败! 原始数据: %s", response_buffer);
+		}
+	}
+	else
+	{
+		ESP_LOGE(TAG, "HTTP请求失败");
+	}
+	ESP_LOGE(TAG, "Check task fail!");
+	return ESP_FAIL;
+}
+
+// 进度
+esp_err_t onenet_ota_check_upload_Progress(int tid,int step)
+{
+	char url[512]={0};
+	char playload[64]={0};
+	static char response_buffer[OTA_BUFFER_SIZE] = {0};
+	int response_size = 0;
+	snprintf(url,sizeof(url),ONENE_OTA_URL_FORMAT"%s/%s/%d/status",MQTT_username,MQTT_client_id,tid);
+	snprintf(playload,sizeof(playload),"{\"step\":%d}",step);
+	if(onenet_ota_http_connect(url,HTTP_METHOD_POST,playload, response_buffer, &response_size) == ESP_OK)
+	{
+		cJSON *root = cJSON_Parse(response_buffer);
+		
+		if(root)
+		{
+			cJSON *code_js = cJSON_GetObjectItem(root, "code");
+			if(code_js && cJSON_GetNumberValue(code_js) == 0)
+			{
+				cJSON_Delete(root);
+				return ESP_OK;
+			}
+		}
+	}
+	ESP_LOGE(TAG, "Upload version fail!");
+	return ESP_FAIL;
+}
+
+esp_err_t onenet_ota_http_client_init_cb(esp_http_client_handle_t client)
+{
+	static char token[512];
+	memset(token, 0, sizeof(token));
+
+	dev_token_generate(token, SIG_METHOD_SHA256,2099279887,MQTT_username,NULL,get_product_access_key());
+
+	ESP_LOGI(TAG, "OTA下载Token生成完成, 长度:%d字节", strlen(token));
+
+	esp_http_client_set_method(client, HTTP_METHOD_GET);
+	esp_http_client_set_header(client, "Content-Type", "application/json");
+
+	if(strlen(token) > 0)
+	{
+		esp_err_t set_result = esp_http_client_set_header(client, "Authorization", token);
+		if(set_result != ESP_OK)
+		{
+			ESP_LOGE(TAG, "设置OTA下载Authorization失败! 错误码: 0x%x", set_result);
+			return ESP_FAIL;
+		}
+		ESP_LOGI(TAG, "OTA下载Authorization设置成功");
+	}
+	else
+	{
+		ESP_LOGE(TAG, "OTA下载Token生成失败!");
+		return ESP_FAIL;
+	}
+
+	return ESP_OK;
+}
+
+// 下载升级文件
+esp_err_t onenet_ota_download(int tid)
+{
+	char url[512] = {0};
+	esp_err_t err;
+	snprintf(url,sizeof(url),"http://iot-api.heclouds.com/fuse-ota/%s/%s/%d/download",MQTT_username,MQTT_client_id,tid);
+	esp_http_client_config_t http_config = {
+		.url = url,
+	};
+
+	esp_https_ota_config_t config = {
+		.http_config = &http_config,
+		.http_client_init_cb = onenet_ota_http_client_init_cb,
+	};
+
+	err = esp_https_ota(&config);
+	if(err == ESP_OK)
+		ESP_LOGI(TAG, "Download Success!...");
+	else
+		ESP_LOGE(TAG, "Download fail!...");
+	return err;
+}
+
+static void onenet_ota_cleanup(int failed_step, esp_err_t last_error)
+{
+	ESP_LOGW(TAG, ">>> 开始OTA资源清理 (失败步骤:%d, 错误码:0x%x)", failed_step, last_error);
+
+	switch(failed_step)
+	{
+			case 4:
+			ESP_LOGW(TAG, " [清理步骤4] 检查OTA分区状态...");
+			{
+				const esp_partition_t *update = esp_ota_get_next_update_partition(NULL);
+
+				if(update != NULL)
+				{
+					esp_ota_img_states_t state;
+					if(esp_ota_get_state_partition(update, &state) == ESP_OK)
+					{
+						if(state == ESP_OTA_IMG_PENDING_VERIFY || state == ESP_OTA_IMG_VALID || state == ESP_OTA_IMG_UNDEFINED)
+						{
+							ESP_LOGW(TAG, "  OTA更新分区状态异常(%d), 标记为无效并回滚", state);
+							esp_err_t mark_err = esp_ota_mark_app_invalid_rollback_and_reboot();
+							if(mark_err != ESP_OK)
+							{
+								ESP_LOGE(TAG, "  ⚠️ 标记OTA分区失败! 错误码: 0x%x", mark_err);
+							}
+							else
+							{
+								ESP_LOGI(TAG, "  ✅ OTA分区已标记为无效, 将在下次启动时回滚");
+							}
+						}
+						else if(state == ESP_OTA_IMG_ABORTED)
+						{
+							ESP_LOGI(TAG, "  OTA更新分区已是ABORTED状态, 无需处理");
+						}
+					}
+				}
+				else
+				{
+					ESP_LOGW(TAG, "  未找到OTA更新分区");
+				}
+			} /* fall through */
+
+		case 3:
+		case 2:
+			ESP_LOGW(TAG, " [清理步骤2-3] 清理任务相关状态...");
+			task_id = 0;
+			memset(target_version, 0, sizeof(target_version));
+			ESP_LOGI(TAG, "  ✅ task_id和target_version已重置");
+			/* fall through */
+
+		case 1:
+			ESP_LOGW(TAG, " [清理步骤1] HTTP连接已在子函数中自动清理");
+			break;
+
+		default:
+			ESP_LOGW(TAG, " [默认清理]");
+			break;
+	}
+
+	ESP_LOGW(TAG, " [最终清理] 重置OTA运行状态...");
+	if(ota_mutex != NULL)
+	{
+		if(xSemaphoreTake(ota_mutex, pdMS_TO_TICKS(1000)) == pdTRUE)
+		{
+			ota_task_running = false;
+			xSemaphoreGive(ota_mutex);
+			ESP_LOGI(TAG, "  ✅ ota_task_running标志位已重置");
+		}
+		else
+		{
+			ESP_LOGE(TAG, "  ❌ 获取互斥锁超时! 强制重置标志位 (不安全)");
+			ota_task_running = false;
+		}
+	}
+	else
+	{
+		ota_task_running = false;
+		ESP_LOGI(TAG, "  ✅ ota_task_running标志位已重置 (无互斥锁)");
+	}
+
+	ESP_LOGI(TAG, "<<< OTA资源清理完成 >>>");
+}
+
+static void onenet_ota_task()
+{
+	esp_err_t err = ESP_OK;
+	int failed_step = 0;
+
+	ESP_LOGI(TAG, "========== OTA 升级流程开始 ==========");
+
+	// 步骤1: 上报版本号
+	failed_step = 1;
+	ESP_LOGI(TAG, "[步骤1/5] 上报当前版本...");
+	err = onenet_ota_upload_version();
+	if(err != ESP_OK)
+	{
+		ESP_LOGE(TAG, "[步骤1/5] 失败! 版本上报失败");
+		goto ota_fail;
+	}
+	ESP_LOGI(TAG, "[步骤1/5] 成功! 版本已上报");
+
+	// 步骤2: 检测升级任务
+	failed_step = 2;
+	ESP_LOGI(TAG, "[步骤2/5] 检查升级任务...");
+	err = onenet_ota_check_task("1",get_app_version());
+	if(err != ESP_OK)
+	{
+		ESP_LOGE(TAG, "[步骤2/5] 失败! 未获取到升级任务 (task_id=%d)", task_id);
+		goto ota_fail;
+	}
+
+	if(task_id == 0)
+	{
+		ESP_LOGW(TAG, "[步骤2/5] 警告! 任务ID为0, 可能没有待执行的升级任务");
+		ESP_LOGW(TAG, "         请确认: 1)平台已创建升级任务  2)目标版本 > 当前版本");
+		err = ESP_ERR_INVALID_STATE;
+		goto ota_fail;
+	}
+	ESP_LOGI(TAG, "[步骤2/5] 成功! 获取到任务ID=%d, 目标版本=%s", task_id, target_version);
+
+	// 步骤3: 上报任务升级状态 10%
+	failed_step = 3;
+	ESP_LOGI(TAG, "[步骤3/5] 上报进度 10%%...");
+	err = onenet_ota_check_upload_Progress(task_id,10);
+	if(err != ESP_OK)
+	{
+		ESP_LOGE(TAG, "[步骤3/5] 失败! 进度上报失败");
+		goto ota_fail;
+	}
+	ESP_LOGI(TAG, "[步骤3/5] 成功!");
+
+	// 步骤4: 进行HTTP下载固件
+	failed_step = 4;
+	ESP_LOGI(TAG, "[步骤4/5] 开始下载固件 (task_id=%d)...", task_id);
+	err = onenet_ota_download(task_id);
+	if(err != ESP_OK)
+	{
+		ESP_LOGE(TAG, "[步骤4/5] 失败! 固件下载失败, 错误码: 0x%x", err);
+		goto ota_fail;
+	}
+	ESP_LOGI(TAG, "[步骤4/5] 成功! 固件下载完成");
+
+	// 步骤5: 上报进度100%
+	failed_step = 5;
+	ESP_LOGI(TAG, "[步骤5/5] 上报进度 100%%...");
+	err = onenet_ota_check_upload_Progress(task_id,100);
+	if(err != ESP_OK)
+	{
+		ESP_LOGW(TAG, "[步骤5/5] 警告! 最终进度上报失败 (但不影响重启)");
+	}
+	else
+	{
+		ESP_LOGI(TAG, "[步骤5/5] 成功!");
+	}
+
+	ESP_LOGI(TAG, "========== OTA 升级成功! 即将重启 ==========");
+	vTaskDelay(1000 / portTICK_PERIOD_MS);
+
+	esp_restart();
+
+ota_fail:
+	ESP_LOGE(TAG, "========== OTA 升级失败! 步骤%d, 错误码:0x%x ==========", failed_step, err);
+
+	onenet_ota_cleanup(failed_step, err);
+
+	ESP_LOGW(TAG, "OTA任务即将退出 (堆栈内存将自动释放)");
+	vTaskDelay(500 / portTICK_PERIOD_MS);  // 给日志一点时间输出
+	vTaskDelete(NULL);
+}
+
+static void ota_mutex_init(void)
+{
+	if(ota_mutex == NULL)
+	{
+		ota_mutex = xSemaphoreCreateMutex();
+		if(ota_mutex == NULL)
+		{
+			ESP_LOGE(TAG, "创建OTA互斥锁失败!");
+		}
+		else
+		{
+			ESP_LOGI(TAG, "OTA互斥锁创建成功");
+		}
+	}
+}
+
+void onenet_ota_update(void)
+{
+	if(ota_mutex == NULL)
+	{
+		ota_mutex_init();
+		if(ota_mutex == NULL)
+		{
+			ESP_LOGE(TAG, "OTA互斥锁不可用，无法启动OTA任务");
+			return;
+		}
+	}
+
+	if(xSemaphoreTake(ota_mutex, pdMS_TO_TICKS(100)) != pdTRUE)
+	{
+		ESP_LOGE(TAG, "获取OTA互斥锁超时! 可能有其他OTA任务正在运行");
+		return;
+	}
+
+	if(ota_task_running)
+	{
+		ESP_LOGW(TAG, "OTA任务正在运行中，拒绝重复启动");
+		xSemaphoreGive(ota_mutex);
+		return;
+	}
+
+	ota_task_running = true;
+	xSemaphoreGive(ota_mutex);
+
+	ESP_LOGI(TAG, "Create onenet_ota_task task...");
+	BaseType_t ret = xTaskCreatePinnedToCore(onenet_ota_task, "onenet_ota_task", 8192, NULL, 5, NULL, 1);
+	if(ret != pdPASS)
+	{
+		ESP_LOGE(TAG, "创建OTA任务失败! 错误码: %d", ret);
+		if(xSemaphoreTake(ota_mutex, portMAX_DELAY) == pdTRUE)
+		{
+			ota_task_running = false;
+			xSemaphoreGive(ota_mutex);
+		}
+	}
+}	
+
+
+
+// ============================================================
+// 11  Task_MQTT_Message_Handler
 // ============================================================
 
 void Task_MQTT_Message_Handler(void *pvParameters)
@@ -1172,6 +2099,16 @@ void Task_MQTT_Message_Handler(void *pvParameters)
 
     // ---------- 主循环：从消息队列取数据并上报 ----------
     while (1) {
+        uint32_t ota_notification_value = 0;
+        if(xTaskNotifyWait(0, OTA_Upgrade_Requested, &ota_notification_value, 0) == pdPASS)
+        {
+            if(ota_notification_value == OTA_Upgrade_Requested)
+            {
+                ESP_LOGI(TAG, "🚀 MQTT主任务收到OTA升级请求，开始异步处理...");
+                onenet_ota_update();
+            }
+        }
+
         Sensor_Message_t message;
 
         if (!Message_Queue_Receive(Message_Queue_Get_Handle(QUEUE_TYPE_MQTT),
@@ -1275,7 +2212,7 @@ void Task_MQTT_Message_Handler(void *pvParameters)
 
         // 上报到 OneNET 物模型
         publish_success_count++;
-        ret = MQTT_Publish(SENSOR_REPORT_TOPIC, json_data, 0);
+        ret = MQTT_Publish(SendTopic, json_data, 0);
         if (ret == ESP_OK) {
             if (publish_success_count % SUCCESS_LOG_INTERVAL == 1) {
                 ESP_LOGI(TAG, "✅ 数据已发送 (计数:%d)", publish_success_count);

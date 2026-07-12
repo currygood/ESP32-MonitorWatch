@@ -1,7 +1,8 @@
-# ESP-IDF Partition Table
-# Name, Type, SubType, Offset, Size, Flags
-nvs,data,nvs,0x9000,0x6000,
-phy_init,data,phy,0xf000,0x1000,
-factory,app,factory,0x10000,0x1f0000,
-vfs,data,fat,0x200000,0xA00000,
-storage,data,spiffs,0xC00000,0x400000,
+# ESP32-S3-N16R8 (16MB Flash) OTA Partition Table
+# Name,    Type, SubType, Offset,   Size,    Flags
+nvs,       data, nvs,     0x9000,   0x4000,
+otadata,   data, ota,     0xD000,   0x2000,
+factory,   app,  factory, 0x10000,  0x200000,
+ota_0,     app,  ota_0,   0x210000, 0x400000,
+ota_1,     app,  ota_1,   0x610000, 0x400000,
+storage,   data, spiffs,  0xA10000, 0x5F0000,

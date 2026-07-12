@@ -1,0 +1,25 @@
+dependency_overrides:
+  flutter_local_notifications:
+    hosted:
+      name: flutter_local_notifications
+      url: https://pub-web.flutter-io.cn
+  dio:
+    hosted:
+      name: dio
+      url: https://pub-web.flutter-io.cn
+  crypto:
+    hosted:
+      name: crypto
+      url: https://pub-web.flutter-io.cn
+  shared_preferences:
+    hosted:
+      name: shared_preferences
+      url: https://pub-web.flutter-io.cn
+  intl:
+    hosted:
+      name: intl
+      url: https://pub-web.flutter-io.cn
+  flutter_lints:
+    hosted:
+      name: flutter_lints
+      url: https://pub-web.flutter-io.cn

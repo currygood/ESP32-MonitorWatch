@@ -27,27 +27,40 @@
 #define DEFAULT_WIFI_SSID       "RedmiK70"
 #define DEFAULT_WIFI_PASS       "88888888"
 #define DEFAULT_MQTT_USERNAME   "1nF1D22kt0"
-#define DEFAULT_MQTT_PASSWORD   "version=2018-10-31&res=products%2F1nF1D22kt0%2Fdevices%2FMyTest&et=2091187496&method=md5&sign=VuvjYUj0KPTQ4e8zOJeyOw%3D%3D"
 #define DEFAULT_MQTT_CLIENT_ID 	"MyTest"
+#define DEFUALT_MQTT_KEY		"cFJaTlc4UkNzbnhBdG5QajVuVko0U3JTMlFUZm5Sb2E="
+// TODO: 请填入你的 OneNET 产品访问密钥 (Product Access Key)
+// 获取位置: OneNET 控制台 -> 产品详情 -> 产品概况 -> AccessKey
+// 注意: 这是产品级别的密钥，不是设备密钥！
+#define DEFAULT_ONENET_PRODUCT_ACCESS_KEY "3S1H19uDdRWLXVslxembo2+P0RWTXcXB56txJWnhA9c="
+
+
+#define ONENE_OTA_URL_FORMAT "http://iot-api.heclouds.com/fuse-ota/"
+
+
+// onenet 平台默认主题
+#define DEFAULT_SEND_TOPIC		"$sys/1nF1D22kt0/MyTest/thing/property/post"
+#define DEFAULT_RECVV_SET_TOPIC "$sys/1nF1D22kt0/MyTest/thing/property/set"
+#define DEFAULT_OTA_TOPIC		"$sys/1nF1D22kt0/MyTest/ota/inform"
 
 // ============================================================
 // MQTT Broker 固定配置（与账号无关，不存入 NVS）
 // ============================================================
 #define MQTT_HOST               "mqtts.heclouds.com"
 #define MQTT_PORT               1883
-#define MQTT_CLIENT_ID          "MyTest"    // 可自定义，通常与设备 ID 相关
-#define SENSOR_REPORT_TOPIC     "$sys/1nF1D22kt0/MyTest/thing/property/post"
 
 // ============================================================
 // NVS 存储配置
 // ============================================================
-#define NVS_NAMESPACE           "watch_cfg"        // ≤15字节限制
-#define NVS_KEY_WIFI_SSID       "wifi_ssid"
-#define NVS_KEY_WIFI_PASS       "wifi_pass"
-#define NVS_KEY_MQTT_USER       "mqtt_user"
-#define NVS_KEY_MQTT_PASS       "mqtt_pass"
-#define NVS_KEY_MQTT_CLIENT_ID  "mqtt_client_id"
-#define NVS_KEY_PROV_DONE       "prov_done"        // 配网完成标志位（uint8）
+#define NVS_NAMESPACE           	"watch_cfg"        // ≤15字节限制
+#define NVS_WIFI_SSID       		"wifi_ssid"
+#define NVS_WIFI_PASS       		"wifi_pass"
+#define NVS_MQTT_USER       		"mqtt_user"
+#define NVS_MQTT_PASS       		"mqtt_pass"
+#define NVS_MQTT_CLIENT_ID  		"mqtt_client_id"
+#define NVS_MQTT_KEY       			"mqtt_key"
+#define NVS_MQTT_PRODUCT_ACCESS_KEY 	"mqtt_pa_key"
+#define NVS_PROV_DONE       		"prov_done"        // 配网完成标志位（uint8）
 
 // ============================================================
 // 凭据缓冲区大小
@@ -57,7 +70,10 @@
 #define CRED_MQTT_USER_MAX_LEN  		64
 #define CRED_MQTT_PASS_MAX_LEN  		256
 #define CRED_MQTT_CLIENT_ID_MAX_LEN		64
-#define CRED_MQTT_KEY_MAX_LEN  		256
+#define CRED_MQTT_KEY_MAX_LEN  			256
+#define TOPIC_STR_SIZE			512
+#define VERSION_STR_SIZE		32
+#define PRODUCT_ACCESS_KEY_SIZE	256
 
 // ============================================================
 // AP 配网配置
@@ -66,7 +82,8 @@
 #define AP_PASSWORD           "watch1234"
 typedef enum {
     AP_Enter_Provision = 1,   // 进入 AP 配网模式的事件
-	AP_Provision_Complete = 2 // AP 配网完成的事件
+	AP_Provision_Complete = 2, // AP 配网完成的事件
+	OTA_Upgrade_Requested = 3  // 收到 OTA 升级请求事件
 }AP_Provision_Event_t;
 
 typedef void (*p_wifi_state_callback)(bool connected); // WiFi 状态回调函数类型
@@ -103,10 +120,11 @@ esp_mqtt_client_handle_t MQTT_Give();
 esp_err_t NVS_Save_Wifi_Credentials(const char *ssid, const char *pass);
 esp_err_t NVS_Load_Wifi_Credentials(char *ssid, size_t ssid_len,
                                      char *pass, size_t pass_len);
-esp_err_t NVS_Save_MQTT_Credentials(const char *username, const char *password,const char* client_id);
+esp_err_t NVS_Save_MQTT_Credentials(const char *username, const char *client_id,const char* key,const char* product_access_key);
 esp_err_t NVS_Load_MQTT_Credentials(char *username, size_t user_len,
-                                     char *password, size_t pass_len,
-                                     char *client_id, size_t client_id_len);
+                                     char *client_id, size_t client_id_len,
+                                     char *key, size_t key_len,
+									 char *product_access_key, size_t product_access_key_len);
 bool      NVS_Has_Wifi_Credentials(void);
 esp_err_t NVS_Clear_All_Credentials(void);  // 清除全部配置（重置手表）
 int Calculate_Risk_Level(uint32_t hr, uint32_t spo2, bool abnormal_motion_detected);// 癫痫发作风险等级计算函数
@@ -129,5 +147,12 @@ bool MQTT_Is_Connected(void);
 
 // MQTT 消息处理主任务（在 main.c 中通过 xTaskCreate 创建）
 void Task_MQTT_Message_Handler(void *pvParameters);
+
+// ============================================================
+// MQTT 主题相关 API（供其他模块调用）
+// ============================================================
+void MQTT_Get_SendTopic(char* topic);
+void MQTT_Get_RecvSetTopic(char* topic);
+void MQTT_Get_OTATopic(char* topic);
 
 #endif // __MQTT_H__

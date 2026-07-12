@@ -23,7 +23,8 @@
       "Bash(python *)",
       "Bash(F:/esp-idf/v5.2.6/esp-idf/tools/idf.py build *)",
       "Bash(\"F:\\\\esp-idf\\\\v5.2.6\\\\export.bat\")",
-      "WebSearch"
+      "WebSearch",
+      "Bash(pandoc *)"
     ]
   }
 }

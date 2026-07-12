@@ -1,0 +1,28 @@
+name: esp32_monitor_app
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  # --- 在这里添加你的物联网相关库 ---
+  dio: ^5.4.1                # 用于 API 轮询
+  crypto: ^3.0.3             # 用于 Token 加密
+  shared_preferences: ^2.2.2  # 用于保存那 4 个 Key
+  intl: ^0.19.0              # 处理时间戳
+  flutter_local_notifications: ^17.1.2 # 报警推送
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  # 如果你有图片资源，以后在这里添加 assets

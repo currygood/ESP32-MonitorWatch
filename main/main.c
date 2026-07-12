@@ -35,6 +35,7 @@ typedef enum
 }DeepSleep_Event;
 // 引用 ULP 中定义的缓冲区大小
 #define ULP_BUF_SIZE 100
+#define WAIT_OTA_NOTIFY 500	//500s
 TaskHandle_t Buzzer_Task_Handle = NULL;  // Buzzer的Handler
 TaskHandle_t MQTT_Task_Handle = NULL;    // MQTT的Handler
 TaskHandle_t APP_MAIN_Handle = NULL;	//app_main的Handler
@@ -53,12 +54,16 @@ static void init_ulp_program(void);
 static void enter_deep_sleep_with_ulp(void);
 static bool isNotFirst=false;
 
+static char SendTopic[TOPIC_STR_SIZE] = {0};
+
 void app_main(void) 
 {
 	vTaskDelay(pdMS_TO_TICKS(5000)); // 等待系统稳定
 	// 根据板子电路设计，要给这个引脚高电平，不然松开按键之后就断电了
 	En_Init();	//芯片一直通电，通过控制GPIO来启用或禁用电池电量检测模块，避免不必要的功耗
 	En_Set(EN_CTL_GPIO, 1);	//默认启用电池电量检测，确保系统有电量信息可用
+
+	MQTT_Get_SendTopic(SendTopic);
 
 	isNotFirst=false;
 	APP_MAIN_Handle = xTaskGetCurrentTaskHandle();
@@ -175,14 +180,13 @@ void app_main(void)
 	vTaskDelay(pdMS_TO_TICKS(500)); 	//等待500ms，确保I2C总线和MessageQueue等设备初始化完成
 
 	// 创建任务
-	xTaskCreatePinnedToCore(Task_MQTT_Message_Handler, "MQTT_Task", 10240, NULL, 3, &MQTT_Task_Handle, 0); 
+	xTaskCreatePinnedToCore(Task_MQTT_Message_Handler, "MQTT_Task", 20480, NULL, 3, &MQTT_Task_Handle, 0); 
 	xTaskCreatePinnedToCore(Task_OLED_Show, "Task_OLED_Show", 10240, NULL, 2, &OLED_Task_Handle, 1);
 	xTaskCreatePinnedToCore(Task_Max30102_Monitor, "max30102_Task", 4096, (void *)Buzzer_Task_Handle, 5, &Max30102_Task_Handle, 1);
 	xTaskCreatePinnedToCore(Task_Mpu6050_Monitor, "MPU6050_Task", 4096, (void *)Buzzer_Task_Handle, 5, &Mpu6050_Task_Handle, 1);
 	xTaskCreatePinnedToCore(Task_Buzzer, "Buzzer_Task", 2048, NULL, 2, &Buzzer_Task_Handle,0); // 创建蜂鸣器任务并保存句柄
 
 	
-
 	vTaskDelay(pdMS_TO_TICKS(11000)); // 等待初始化 等待连接wifi
 	// 初始化结束后检查是不是因为唤醒重启，如果是，那有异常数据处理    放到这里的原因是message模块和mqtt初始化后才能发送数据
 	if(Wake_Warm == 1)
@@ -214,7 +218,7 @@ void app_main(void)
                         final_hr, time_str,
                         final_spo2, time_str,
                         current_risk, time_str); // 发送计算出的风险等级
-		esp_err_t err = MQTT_Publish(SENSOR_REPORT_TOPIC, json_data, 0);
+		esp_err_t err = MQTT_Publish(SendTopic, json_data, 0);
 		if(err!= ESP_OK) {
 			ESP_LOGE("MainWake", "异常数据上报失败: %s", esp_err_to_name(err));
 		}
@@ -241,13 +245,19 @@ void app_main(void)
                          rand() % 10000,
                          "true",
                          time_str);
-		esp_err_t err = MQTT_Publish(SENSOR_REPORT_TOPIC, json_data, 0);
+		esp_err_t err = MQTT_Publish(SendTopic, json_data, 0);
 		if(err!= ESP_OK) {
 			ESP_LOGE("MainWake", "异常数据上报失败: %s", esp_err_to_name(err));
 		}
 	}
 
 	vTaskDelay(pdMS_TO_TICKS(10000)); // 等待发送数据完成
+
+	// 等待 OTA 升级（MQTT 连接后自动上报版本，如有升级会下载并重启）
+	for (int ota_wait_sec = 0; ota_wait_sec < WAIT_OTA_NOTIFY; ota_wait_sec++)
+	{
+		vTaskDelay(pdMS_TO_TICKS(1000));
+	}
 
 	// 进入深度睡眠+ULP逻辑
 	uint32_t received_cmd;
@@ -308,11 +318,14 @@ void My_Key_Callback(key_id_t id, key_event_t event) {
 	}
 	if(id == KEY_3)
 	{
-		if(event == KEY_EVENT_LONG_PRESS) {
+		if(event == KEY_EVENT_SINGLE_CLICK) {
 			// 长按关机
 			ESP_LOGI("MainSleep", "准备关机...");
 			vTaskDelay(pdMS_TO_TICKS(100)); // 给 LOG 输出一点时间
 			Battery_Set_DISABLE();
+			vTaskDelete(OLED_Task_Handle); OLED_Task_Handle = NULL;
+			vTaskDelete(Max30102_Task_Handle); Max30102_Task_Handle = NULL;
+			vTaskDelete(Mpu6050_Task_Handle); Mpu6050_Task_Handle = NULL;
 			En_Set(EN_CTL_GPIO, 0);	// 通过控制GPIO来切断电池，达到关机效果
 		}
 	}
