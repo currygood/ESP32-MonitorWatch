@@ -10,23 +10,35 @@
 #### （4）	屏幕：中景园电子0.96寸OLED，尺寸不大，所能显示内容多少满足了我们的需求，而且成本低，而且项目要求的刷新率只需要1hz甚至更低，会比led屏幕省电。
 其他硬件具体选型看原理图和pcb
 <img width="865" height="581" alt="image" src="https://github.com/user-attachments/assets/8114b4b1-0d3c-4b39-8b8a-4e99544ac33a" />
+
 <img width="565" height="428" alt="image" src="https://github.com/user-attachments/assets/8c6df692-756a-4ad5-9961-a686ba2feedf" />
+
 ## 项目所实现的
 ### 1.1	功能与特性
 本项目实现了基于生物信号监测的癫痫前期预警系统，核心功能包括：
 •	心率与血氧实时监测：采用MAX30102传感器，支持50Hz高采样率，通过算法提取心率值和血氧饱和度，具备心率异常预警功能
 •	跌倒/抽搐检测：基于MPU6050加速度计，使用加速度平方阈值检测剧烈撞击，通过高频震动分析识别抽搐症状，准确率达95%以上
 •	双重检测机制：主CPU与ULP协处理器协同工作，ULP持续监测触发条件，主CPU进行二次确认后触发报警
-•	实时MQTT上报：异常数据通过MQTT协议实时上报至OneNET平台，支持手机和电脑远程查看，如图1和图2，图1为mqtt端，图2为手机上通过网站查看
+•	实时MQTT上报：异常数据通过MQTT协议实时上报至OneNET平台，支持手机和电脑远程查看，onenet平台端显示，手机上通过网站查看，然后再下面一张图就是开发出来的手机app显示数据
 <img width="865" height="268" alt="image" src="https://github.com/user-attachments/assets/d10cfa3c-9796-4f7a-8e22-c53fb26a9a24" />
-<img width="317" height="563" alt="image" src="https://github.com/user-attachments/assets/b6c66d4c-5a4e-4c59-811e-fc47b98f4fba" />
+
+<img width="467" height="832" alt="image" src="https://github.com/user-attachments/assets/a681d849-df83-4c05-8bc9-82b6ecad2c4f" />
+
+<img width="409" height="527" alt="image" src="https://github.com/user-attachments/assets/b3a0a18a-69d1-4f38-8534-0941e0202545" />
+
 •	低功耗深度睡眠：连接wifi成功后，系统进入深度睡眠模式，ULP协处理器以超低功耗持续监测，检测到异常立即唤醒主CPU
 •	多级报警系统：蜂鸣器本地报警、MQTT云端报警、手机远程查看三重保障
-•	OLED实时显示：显示心率、血氧、电池电量、时间等信息，支持按键切换显示内容，如图3和图4
-<img width="467" height="832" alt="image" src="https://github.com/user-attachments/assets/a681d849-df83-4c05-8bc9-82b6ecad2c4f" />
+•	OLED实时显示：显示心率、血氧、电池电量、时间等信息，支持按键切换显示内容，如图
+
+
+<img width="317" height="563" alt="image" src="https://github.com/user-attachments/assets/b6c66d4c-5a4e-4c59-811e-fc47b98f4fba" />
+
 <img width="434" height="579" alt="image" src="https://github.com/user-attachments/assets/057e3536-07e9-4020-866a-1ef87e6439ea" />
-•	AP配网功能：长按Key2进入AP配网模式，支持动态配置WiFi和MQTT凭据，无需修改代码，如图5
+
+•	AP配网功能：长按Key2进入AP配网模式，支持动态配置WiFi和MQTT凭据，无需修改代码，如图
+
 <img width="669" height="580" alt="image" src="https://github.com/user-attachments/assets/6d5e93d7-ec0c-4dab-abe6-4243c258a46c" />
+
 ### 1.2	应用领域
 该产品主要应用于以下场景：
 •	癫痫患者日常监护：为癫痫患者提供实时发作前症状监测和预警，减少意外发生
@@ -43,7 +55,14 @@
 https://www.bilibili.com/video/BV1H3L96bEtP/?vd_source=c9924bda4031caf6f7caa15a01d9be91
 ### 1.5 产品图
 <img width="3072" height="4096" alt="主页面" src="https://github.com/user-attachments/assets/2fbecda4-00f6-4e81-ab73-3de331541163" />
+
 <img width="3072" height="4096" alt="心率血氧显示" src="https://github.com/user-attachments/assets/5aa49567-aad2-44c0-b697-468e6c4bd64d" />
+
 <img width="3072" height="4096" alt="传感器图" src="https://github.com/user-attachments/assets/d9e38b68-2206-4fbe-a814-148e00b7543f" />
+
 <img width="3072" height="4096" alt="OLED屏幕图1" src="https://github.com/user-attachments/assets/69a3a3e8-667f-455b-8dc7-b0742928a566" />
 
+
+内容新增：
+1. ota升级
+2. 开发的手机app可以查看心率血氧等数据
