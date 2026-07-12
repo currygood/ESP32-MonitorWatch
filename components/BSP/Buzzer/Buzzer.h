@@ -33,4 +33,8 @@ void Task_Buzzer(void *pvParameters);
 #ifdef __cplusplus
 }
 #endif
+<<<<<<< HEAD
 #endif
+=======
+#endif
+>>>>>>> e085dd42cab267ed7dfa903d4539851e3a370c88

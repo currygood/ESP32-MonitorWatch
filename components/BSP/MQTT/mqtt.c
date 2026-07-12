@@ -188,6 +188,7 @@ esp_err_t NVS_Load_Wifi_Credentials(char *ssid, size_t ssid_len,
 
 /**
  * @brief 将 MQTT 用户名/密码 client_id 写入 NVS
+ * @brief 将 MQTT 用户名/密码 client_id 写入 NVS
  */
 esp_err_t NVS_Save_MQTT_Credentials(const char *username, const char *client_id,const char* key,const char* product_access_key)
 {
@@ -211,6 +212,7 @@ esp_err_t NVS_Save_MQTT_Credentials(const char *username, const char *client_id,
 }
 
 /**
+ * @brief 从 NVS 读取 MQTT 用户名/密码 client_id
  * @brief 从 NVS 读取 MQTT 用户名/密码 client_id
  */
 esp_err_t NVS_Load_MQTT_Credentials(char *username, size_t user_len,
@@ -841,9 +843,29 @@ void Wifi_State_Handle(bool isConnected)
 }
 
 
+void Wifi_State_Handle(bool isConnected)
+{
+	if(isConnected)
+		xTaskNotify(MQTT_Task_Handle,AP_Provision_Complete,eSetValueWithOverwrite);
+}
+
+
 // ============================================================
 // ⑥  Wifi_Init：优先读 NVS，否则等待key2长按走 AP 配网
+// ⑥  Wifi_Init：优先读 NVS，否则等待key2长按走 AP 配网
 // ============================================================
+/***
+ * @brief 初始化 WiFi 模块，优先尝试使用 NVS 中的凭据连接 WiFi；如果没有凭据或连接失败，则进入 AP 配网模式
+ * @return 0:成功通过nvs中保存的wifi信息连接了wifi 
+ *         1:nvs有信息，但是无法连接wifi 
+ *         2: nvs没有wifi信息，等待进入ap配网模式 
+ *         3: 创建事件组失败
+ */
+#define THROUGH_NVS_CONNECTION 0
+#define NVS_CONNECTION_FAILED 1
+#define WAITING_FOR_AP_PROVISIONING 2
+#define EVENT_GROUP_CREATION_FAILED 3
+uint8_t Wifi_Init(void)
 /***
  * @brief 初始化 WiFi 模块，优先尝试使用 NVS 中的凭据连接 WiFi；如果没有凭据或连接失败，则进入 AP 配网模式
  * @return 0:成功通过nvs中保存的wifi信息连接了wifi 
@@ -862,6 +884,7 @@ uint8_t Wifi_Init(void)
         if (wifi_event_group == NULL) {
             ESP_LOGE(TAG, "创建 WiFi 事件组失败");
             return EVENT_GROUP_CREATION_FAILED;
+            return EVENT_GROUP_CREATION_FAILED;
         }
     }
 
@@ -869,10 +892,13 @@ uint8_t Wifi_Init(void)
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     esp_netif_sta = esp_netif_create_default_wifi_sta();
 	esp_netif_ap = esp_netif_create_default_wifi_ap();
+    esp_netif_sta = esp_netif_create_default_wifi_sta();
+	esp_netif_ap = esp_netif_create_default_wifi_ap();
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
+    // 注册 IP 事件
     // 注册 IP 事件
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
                                                &wifi_event_handler, NULL));
@@ -903,21 +929,29 @@ uint8_t Wifi_Init(void)
 			esp_wifi_connect();
 
             ESP_LOGW(TAG, ">>> 等待 WiFi 连接（最长 90 秒）...");
+            ESP_LOGW(TAG, ">>> 等待 WiFi 连接（最长 90 秒）...");
             EventBits_t bits = xEventGroupWaitBits(wifi_event_group,
                                                    WIFI_CONNECTED_BIT,
                                                    pdFALSE, pdFALSE,
+                                                   pdMS_TO_TICKS(90000));
                                                    pdMS_TO_TICKS(90000));
             if (bits & WIFI_CONNECTED_BIT) {
                 ESP_LOGW(TAG, ">>> WiFi 连接成功（NVS 凭据）");
                 ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MIN_MODEM));
                 return THROUGH_NVS_CONNECTION;
+                ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MIN_MODEM));
+                return THROUGH_NVS_CONNECTION;
             } else {
+                ESP_LOGE(TAG, "WiFi 连接超时（NVS 凭据失效？）或者未开启wifi");
+                return NVS_CONNECTION_FAILED;
                 ESP_LOGE(TAG, "WiFi 连接超时（NVS 凭据失效？）或者未开启wifi");
                 return NVS_CONNECTION_FAILED;
             }
         }
     }
 
+	// ----------------------------------------------------------
+    // 路径 B：NVS 无凭据 → AP 配网
 	// ----------------------------------------------------------
     // 路径 B：NVS 无凭据 → AP 配网
     // ----------------------------------------------------------
@@ -1070,6 +1104,16 @@ typedef enum
  * @param uint8_t choice 选择模式，0:直接连接wifi了，用nvs保存的 1:ap配网获得的mqtt信息连接onenet
  */
 esp_err_t MQTT_App_Start(uint8_t choice)
+typedef enum
+{
+	MQTT_App_Start_Direct_State = 0,
+	MQTT_APP_Start_AP_State = 1
+}MQTT_Start_Event;
+/***
+ * @brief 启动 MQTT 客户端
+ * @param uint8_t choice 选择模式，0:直接连接wifi了，用nvs保存的 1:ap配网获得的mqtt信息连接onenet
+ */
+esp_err_t MQTT_App_Start(uint8_t choice)
 {
     ESP_LOGW(TAG, ">>> 初始化 MQTT 客户端...");
 	static char token[CRED_MQTT_KEY_MAX_LEN] = {0};		//onenet平台凭证
@@ -1139,7 +1183,17 @@ esp_err_t MQTT_App_Start(uint8_t choice)
 		ESP_LOGE(TAG, "MQTT 客户端初始化失败");
 		return ESP_FAIL;
 	}
+	mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
+	if (mqtt_client == NULL) {
+		ESP_LOGE(TAG, "MQTT 客户端初始化失败");
+		return ESP_FAIL;
+	}
 
+	ESP_ERROR_CHECK(esp_mqtt_client_register_event(mqtt_client, ESP_EVENT_ANY_ID,
+												mqtt_event_handler, NULL));
+	ESP_ERROR_CHECK(esp_mqtt_client_start(mqtt_client));
+	ESP_LOGW(TAG, ">>> MQTT 客户端已启动");
+	return ESP_OK;
 	ESP_ERROR_CHECK(esp_mqtt_client_register_event(mqtt_client, ESP_EVENT_ANY_ID,
 												mqtt_event_handler, NULL));
 	ESP_ERROR_CHECK(esp_mqtt_client_start(mqtt_client));
@@ -1169,6 +1223,7 @@ esp_err_t MQTT_Publish(const char *topic, const char *data, int len)
 }
 
 // ============================================================
+// ⑨  WiFi 连接状态查询 API
 // ⑨  WiFi 连接状态查询 API
 // ============================================================
 
@@ -2062,6 +2117,61 @@ void Task_MQTT_Message_Handler(void *pvParameters)
 		}
 	}
 	
+	if(ret == THROUGH_NVS_CONNECTION)
+	{
+		mqtt_app_choice = MQTT_App_Start_Direct_State;
+	}
+	else if(ret == NVS_CONNECTION_FAILED || ret == WAITING_FOR_AP_PROVISIONING)
+	{
+		//连接失败，等待ap配网
+		// 直到ap配网完成才会收到通知，才会继续往下走mqtt的初始化
+		if (xTaskNotifyWait(0, 0xFFFFFFFF, &received_cmd, portMAX_DELAY) == pdPASS)
+		{
+			if(received_cmd == AP_Enter_Provision)
+			{
+				ESP_LOGW(TAG,"进入AP配网模式，等待配网完成...");
+				ap_wifi_apcfg(true);
+				// 等待 AP 配网完成的事件通知
+				if(xTaskNotifyWait(0, 0xFFFFFFFF, &received_cmd, pdMS_TO_TICKS(180000)) == pdPASS) 
+				{
+					if(received_cmd == AP_Provision_Complete)
+					{
+						ESP_LOGW(TAG,"AP 配网完成，继续 MQTT 初始化...");
+						mqtt_app_choice = MQTT_APP_Start_AP_State;
+					}
+				}
+				else
+				{
+					ESP_LOGE(TAG,"等待 AP 配网完成事件超时");
+					if (Scan_Task_Handle) {
+						vTaskDelete(Scan_Task_Handle);
+						Scan_Task_Handle = NULL;
+					}
+					if (AP_Task_Handle) {
+						vTaskDelete(AP_Task_Handle);
+						AP_Task_Handle = NULL;
+					}
+					vTaskDelete(NULL);
+					return;
+				}
+			}
+			else
+			{
+				ESP_LOGE(TAG,"!!!收到未知事件通知,删除退出MQTT任务!!!");
+				if (Scan_Task_Handle) {
+					vTaskDelete(Scan_Task_Handle);
+					Scan_Task_Handle = NULL;
+				}
+				if (AP_Task_Handle) {
+					vTaskDelete(AP_Task_Handle);
+					AP_Task_Handle = NULL;
+				}
+				vTaskDelete(NULL);
+				return;
+			}
+		}
+	}
+	
     // ---------- 等待网络稳定（手机热点 NAT 需要时间）----------
     vTaskDelay(pdMS_TO_TICKS(3000));
 
@@ -2081,6 +2191,9 @@ void Task_MQTT_Message_Handler(void *pvParameters)
     if (time(NULL) < 1000000000LL) {
         ESP_LOGW(TAG, "⚠️ NTP 同步未完成，使用相对时间戳");
     }
+
+	// ---------- 启动 MQTT ----------
+	MQTT_App_Start(mqtt_app_choice);
 
 	// ---------- 启动 MQTT ----------
 	MQTT_App_Start(mqtt_app_choice);
@@ -2138,9 +2251,30 @@ void Task_MQTT_Message_Handler(void *pvParameters)
 		char time_str[64] = {0};
 		snprintf(time_str, sizeof(time_str), ",\"time\":%lld", ts_ms);
 		
+		char time_str[64] = {0};
+		snprintf(time_str, sizeof(time_str), ",\"time\":%lld", ts_ms);
+		
         switch (message.Message_Type) {
 
             case MESSAGE_TYPE_HEART_RATE_SPO2:
+                 int current_risk = Calculate_Risk_Level(
+                    message.Data.Heart_Rate_SPO2_Data.Heart_Rate, 
+                    message.Data.Heart_Rate_SPO2_Data.SpO2,
+                    Get_isFall());
+
+
+
+                snprintf(json_data, sizeof(json_data), 
+                        "{\"id\":\"%d\",\"version\":\"1.0\",\"params\":{"
+                        "\"heart_rate\":{\"value\":%lu %s},"
+                        "\"oxygen_saturation\":{\"value\":%lu %s},"
+                        "\"seizure_risk_level\":{\"value\":%d %s}" 
+                        "}}",
+                        rand() % 1000,
+                        message.Data.Heart_Rate_SPO2_Data.Heart_Rate, time_str,
+                        message.Data.Heart_Rate_SPO2_Data.SpO2, time_str,
+                        current_risk, time_str); // 发送计算出的风险等级
+
                  int current_risk = Calculate_Risk_Level(
                     message.Data.Heart_Rate_SPO2_Data.Heart_Rate, 
                     message.Data.Heart_Rate_SPO2_Data.SpO2,
@@ -2198,6 +2332,11 @@ void Task_MQTT_Message_Handler(void *pvParameters)
                          rand() % 10000,
                          (message.Data.Alert_Data.Fall_Detected || message.Data.Alert_Data.Convulsion_Detected) ? "true" : "false",
                          time_str);
+                         "\"abnormal_motion_detected\":{\"value\":%s %s}"
+                         "}}",
+                         rand() % 10000,
+                         (message.Data.Alert_Data.Fall_Detected || message.Data.Alert_Data.Convulsion_Detected) ? "true" : "false",
+                         time_str);
                 ESP_LOGW(TAG, "🚨 预警 跌倒:%s 抽搐:%s 心率:%s",
                          message.Data.Alert_Data.Fall_Detected       ? "Y" : "N",
                          message.Data.Alert_Data.Convulsion_Detected ? "Y" : "N",
@@ -2217,6 +2356,7 @@ void Task_MQTT_Message_Handler(void *pvParameters)
             if (publish_success_count % SUCCESS_LOG_INTERVAL == 1) {
                 ESP_LOGI(TAG, "✅ 数据已发送 (计数:%d)", publish_success_count);
             }
+			
 			
         } else {
             publish_error_count++;

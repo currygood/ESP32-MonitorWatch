@@ -64,6 +64,7 @@
 
 // ============================================================
 // 凭据缓冲区大小
+// 凭据缓冲区大小
 // ============================================================
 #define CRED_SSID_MAX_LEN      			64
 #define CRED_PASS_MAX_LEN       		128
@@ -76,6 +77,7 @@
 #define PRODUCT_ACCESS_KEY_SIZE	256
 
 // ============================================================
+// AP 配网配置
 // AP 配网配置
 // ============================================================
 #define AP_SSID               "EpiWatch_AP"
@@ -112,7 +114,10 @@ typedef struct {
 // ============================================================
 uint8_t Wifi_Init(void);
 esp_err_t MQTT_App_Start(uint8_t choice);
+uint8_t Wifi_Init(void);
+esp_err_t MQTT_App_Start(uint8_t choice);
 esp_err_t MQTT_Publish(const char *topic, const char *data, int len);
+esp_mqtt_client_handle_t MQTT_Give();
 esp_mqtt_client_handle_t MQTT_Give();
 // ============================================================
 // NVS 凭据管理 API（可供 OLED 菜单等模块调用）

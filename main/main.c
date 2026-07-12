@@ -5,6 +5,7 @@
 #include "max30102.h"
 #include "driver/gpio.h"
 #include "driver/rtc_io.h"
+#include "driver/rtc_io.h"
 #include "esp_err.h"
 #include "i2c_driver.h"
 #include "OLED.h"
@@ -157,10 +158,33 @@ void app_main(void)
 
 	vTaskDelay(pdMS_TO_TICKS(500));
 
+	// 整个程序只在这里写一次！
+    ESP_ERROR_CHECK(gpio_install_isr_service(0));  
+    // ESP_LOGI("APP_MAIN", "GPIO ISR 服务安装成功");  //成功就不管，没必要输出了
+
+	vTaskDelay(pdMS_TO_TICKS(500));
+
 	// 初始化消息队列
 	if (!Message_Queue_Init()) {
 		ESP_LOGE("TASK_SENSOR", "消息队列初始化失败");
 	}
+	
+	// RTC初始化
+	esp_err_t rtc_ret = Rtc_Init();
+	if(rtc_ret != ESP_OK) {
+		ESP_LOGE("APP_MAIN", "RTC 初始化失败: %s", esp_err_to_name(rtc_ret));
+	}
+
+	//获取电池电量初始化
+	Battery_Level_Init();
+
+	// 初始化蜂鸣器
+	buzzer_init(BUZZER_GPIO_NUM, BUZZER_FREQ_HZ);
+
+	// 按键初始化
+	Key_Init(My_Key_Callback); // 传入 NULL 使用轮询模式，后续通过 Key_Get() 获取按键事件
+
+	vTaskDelay(pdMS_TO_TICKS(500)); 	//等待500ms，确保I2C总线和MessageQueue等设备初始化完成
 	
 	// RTC初始化
 	esp_err_t rtc_ret = Rtc_Init();

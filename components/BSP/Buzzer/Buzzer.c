@@ -100,4 +100,8 @@ void Task_Buzzer(void *pvParameters)
             }
         }
     }
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> e085dd42cab267ed7dfa903d4539851e3a370c88

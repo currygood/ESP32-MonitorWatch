@@ -157,11 +157,14 @@
             <input type="password" id="mqtt_key" placeholder="请输入 MQTT Key">
         </div>
 
+<<<<<<< HEAD
         <div class="form-group">
             <label for="onenet_product_access_key">OneNET 产品 Access Key</label>
             <input type="password" id="onenet_product_access_key" placeholder="请输入 OneNET 产品的 Access Key">
         </div>
 
+=======
+>>>>>>> e085dd42cab267ed7dfa903d4539851e3a370c88
         <button id="submit-btn" class="btn-submit">确认并保存所有配置</button>
         
         <div id="status" class="status"></div>
@@ -246,10 +249,16 @@
             const m_user = document.getElementById('mqtt_user').value.trim();
             const m_cid = document.getElementById('mqtt_client_id').value.trim();
             const m_key = document.getElementById('mqtt_key').value.trim();
+<<<<<<< HEAD
             const product_key = document.getElementById('onenet_product_access_key').value.trim();
 
             // 统一验证：所有字段必填
             if (!ssid || !pass || !m_user || !m_cid || !m_key || !product_key) {
+=======
+
+            // 统一验证：所有字段必填
+            if (!ssid || !pass || !m_user || !m_cid || !m_key) {
+>>>>>>> e085dd42cab267ed7dfa903d4539851e3a370c88
                 showStatus('错误：必须填写所有配置项！', 'error');
                 return;
             }
@@ -264,8 +273,12 @@
                 "password": pass,
                 "username": m_user,
                 "client_id": m_cid,
+<<<<<<< HEAD
                 "key": m_key,
                 "onenet_product_access_key": product_key
+=======
+                "key": m_key
+>>>>>>> e085dd42cab267ed7dfa903d4539851e3a370c88
             };
 
             websocket.send(JSON.stringify(fullConfig));
