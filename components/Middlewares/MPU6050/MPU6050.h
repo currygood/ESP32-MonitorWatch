@@ -31,7 +31,7 @@
 #define MPU6050_SAMPLES_PER_SEC  50
 
 // --- API 声明 ---
-void Mpu6050_Init(void);
+void Mpu6050_Init(i2c_master_bus_handle_t bus_handle);
 
 esp_err_t Mpu6050_Write_Reg(uint8_t reg, uint8_t data);
 esp_err_t Mpu6050_Read_Reg(uint8_t reg, uint8_t *data);

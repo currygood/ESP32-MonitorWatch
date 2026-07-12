@@ -39,10 +39,6 @@ typedef struct{
 	const uint8_t *data; // 图像字模数据指针
 } Image;
 
-
-extern const uint8_t heart_32x32[256];
-
-
 extern const uint8_t battery_pattern_5[19];
 extern const uint8_t battery_pattern_4[19];
 extern const uint8_t battery_pattern_3[19];

@@ -11,7 +11,8 @@ set(include_dirs
     MAX30102
     MPU6050
 	MessageQueue
-	GetBatteryLevel)
+	GetBatteryLevel
+	./)
 
 set(requires
     driver

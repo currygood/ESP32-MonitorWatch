@@ -6,8 +6,9 @@
 #include "esp_err.h"
 
 // --- 电池电量检测配置宏 ---
-#define BATTERY_ADC_CHANNEL     ADC_CHANNEL_7     // ADC通道7对应GPIO8
-#define BATTERY_ADC_PIN         8                // 电池检测引脚
+#define BATTERY_ADC_CHANNEL     ADC1_CHANNEL_4           // ADC通道0对应GPIO5，根据ESP32的ADC引脚分配
+#define BATTERY_ADC_PIN         GPIO_NUM_5                // 电池检测引脚（GPIO5）
+#define BATTERY_ADC_ENABLED     GPIO_NUM_6                // 是否启用电池电量检测（0启用，1禁用）
 #define BATTERY_ADC_UNIT        ADC_UNIT_1        // ADC单元1
 #define BATTERY_ADC_WIDTH       ADC_WIDTH_BIT_12  // 12位分辨率
 #define BATTERY_ADC_ATTEN       ADC_ATTEN_DB_11   // 11dB衰减（0-3.3V范围）
@@ -15,11 +16,11 @@
 // --- 电压转换参数 ---
 #define ADC_MAX_VALUE           4095             // 12位ADC最大值
 #define REFERENCE_VOLTAGE       3.3f             // 参考电压3.3V
-#define VOLTAGE_DIVIDER_RATIO    2.0f             // 电压分压比（如果使用分压电路）
+#define VOLTAGE_DIVIDER_RATIO    1.0f             // 电压分压比（无分压时为1.0）
 
-// --- 电池电压范围（典型锂电池） ---
-#define BATTERY_FULL_VOLTAGE     4.2f            // 满电电压
-#define BATTERY_EMPTY_VOLTAGE    3.3f            // 空电电压
+// --- 电池电压范围（典型锂电池） ---  通过分压计算的大概结果
+#define BATTERY_FULL_VOLTAGE 2.9647f
+#define BATTERY_EMPTY_VOLTAGE 2.6117f
 
 // --- 全局变量声明 ---
 extern bool Battery_Level_Initialized;
@@ -39,7 +40,7 @@ esp_err_t Battery_Level_Init(void);
  * @param adc_value 输出的ADC原始值
  * @return esp_err_t 读取结果
  */
-esp_err_t Battery_Read_Adc_Value(uint32_t *adc_value);
+uint32_t Battery_Read_Adc_Value();
 
 /**
  * @brief 读取电池电压（转换为电压值）
@@ -47,6 +48,13 @@ esp_err_t Battery_Read_Adc_Value(uint32_t *adc_value);
  * @return esp_err_t 读取结果
  */
 esp_err_t Battery_Read_Voltage(float *voltage);
+
+/**
+ * @brief 计算电池电量百分比
+ * @param voltage 电池电压
+ * @return uint8_t 电量百分比（0-100）
+ */
+uint8_t Battery_Calculate_Percentage_Test33V(float voltage);
 
 /**
  * @brief 计算电池电量百分比
@@ -66,5 +74,16 @@ uint8_t Battery_Get_Level(void);
  * @return float 电池电压（单位：V）
  */
 float Battery_Get_Voltage(void);
+
+/**
+ * @brief 启用电池电量检测
+*/
+void Battery_Set_ENABLE(void);
+
+
+/**
+ * @brief 禁用电池电量检测
+*/
+void Battery_Set_DISABLE(void);
 
 #endif // GET_BATTERY_LEVEL_H

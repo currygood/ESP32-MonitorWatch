@@ -6,6 +6,7 @@
 #include <string.h>
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
+#include "Buzzer.h"
 
 
 static const char *TAG = "MAX30102";
@@ -45,8 +46,11 @@ void Max30102_Init(i2c_master_bus_handle_t bus_handle) {
     Max30102_Write_Reg(REG_FIFO_CONFIG, 0x0F);
     Max30102_Write_Reg(REG_MODE_CONFIG, 0x03);
     Max30102_Write_Reg(REG_SPO2_CONFIG, 0x27);
-    Max30102_Write_Reg(REG_LED1_PA, 0x24);
-    Max30102_Write_Reg(REG_LED2_PA, 0x24);
+	// Max30102_Write_Reg(REG_LED1_PA, 0x24);
+    // Max30102_Write_Reg(REG_LED2_PA, 0x24);
+	// 降低LED亮度省电
+    Max30102_Write_Reg(REG_LED1_PA, 0x1C);
+    Max30102_Write_Reg(REG_LED2_PA, 0x1C);
     Max30102_Write_Reg(REG_PILOT_PA, 0x7f);
 }
 
@@ -122,7 +126,7 @@ void Max30102_Update_Heart_Rate_Baseline(uint32_t current_hr)
     }
 }
 
-// 检查心率是否过快
+// 检查心率是否过快/过低
 bool Max30102_Check_Heart_Rate_Warning(uint32_t current_hr)
 {
     // 检查心率是否在有效范围内
@@ -144,7 +148,15 @@ bool Max30102_Check_Heart_Rate_Warning(uint32_t current_hr)
                      current_hr, Heart_Rate_Baseline);
         }
         return true;
-    } else {
+    }else if(current_hr < warning_threshold - HEART_RATE_WARNING_THRESHOLD_LOW){			//心率过低
+		if (!Heart_Rate_Warning_Active) {
+            Heart_Rate_Warning_Active = true;
+            ESP_LOGW(TAG, "⚠️ 心率过低预警! 当前心率: %lu bpm, 基准心率: %lu bpm", 
+                     current_hr, Heart_Rate_Baseline);
+        }
+        return true;
+	}
+	else {
         if (Heart_Rate_Warning_Active) {
             Heart_Rate_Warning_Active = false;
             ESP_LOGI(TAG, "心率恢复正常: %lu bpm", current_hr);
@@ -511,6 +523,27 @@ void Max30102_Send_JSON_Data(void)
              abnormal_motion_detected ? 1 : 0, timestamp);
 }
 
+void Max30102_Disable_Interrupts_For_ULP(void) 
+{
+    // 1. 在传感器内部寄存器禁用所有中断
+    // 这样 MAX30102 就不会再主动拉低 GPIO 6 引脚了
+    Max30102_Write_Reg(REG_INTR_ENABLE_1, 0x00);
+    Max30102_Write_Reg(REG_INTR_ENABLE_2, 0x00);
+
+    // 2. 读取一次状态寄存器，确保当前的 INT 引脚被释放（回到高电平）
+    uint8_t dummy;
+    Max30102_Read_Reg(REG_INTR_STATUS_1, &dummy);
+    Max30102_Read_Reg(REG_INTR_STATUS_2, &dummy);
+
+    // 3. 在 ESP32 侧移除 ISR 句柄
+    gpio_isr_handler_remove(MAX30102_INT_GPIO);
+    
+    // 4. 重置引脚状态为普通输入，不带任何中断触发
+    gpio_reset_pin(MAX30102_INT_GPIO);
+    
+    ESP_LOGI("MAX30102", "中断功能已关闭，准备切换至 ULP");
+}
+
 // --- 监测任务 ---
 void Task_Max30102_Monitor(void *pvParameters) {
     esp_log_level_set("gpio", ESP_LOG_ERROR);
@@ -522,9 +555,12 @@ void Task_Max30102_Monitor(void *pvParameters) {
     uint8_t fifo_wp, fifo_rp;
     int samples_read;
     int i;
+	static uint32_t last_buzzer_time = 0;
+	static bool isBuzzerOn = false;
     
     ESP_LOGI(TAG, "Monitor task started");
-    
+
+	//初始化
 	i2c_master_bus_handle_t i2c_bus = I2c_Get_Global_Bus_Handle();
     if (i2c_bus == NULL) {
         ESP_LOGE(TAG, "无法获取I2C总线句柄");
@@ -567,41 +603,34 @@ void Task_Max30102_Monitor(void *pvParameters) {
     Max30102_Read_Reg(0x06, &fifo_rp);
     ESP_LOGI(TAG, "After ISR init - FIFO_WP: %d, FIFO_RP: %d", fifo_wp, fifo_rp);
 
-    // 2. 读取前500个样本（改为轮询模式）
+    // 2. 读取前1000个样本（改为轮询模式）
     samples_read = 0;
     ESP_LOGI(TAG, "Starting sample collection...");
-    
     while (samples_read < n_ir_buffer_length) {
         Max30102_Read_Reg(0x04, &fifo_wp);  // FIFO_WR_PTR
         Max30102_Read_Reg(0x06, &fifo_rp);  // FIFO_RD_PTR
-        
         if (fifo_wp != fifo_rp) {
             esp_err_t ret = Max30102_Read_Fifo(temp, 6);
             if (ret != ESP_OK) {
                 continue;
             }
-            
             aun_red_buffer[samples_read] = ((temp[0] & 0x03) << 16) | (temp[1] << 8) | temp[2];
             aun_ir_buffer[samples_read] = ((temp[3] & 0x03) << 16) | (temp[4] << 8) | temp[5];
             if (un_min > aun_red_buffer[samples_read]) un_min = aun_red_buffer[samples_read];
             if (un_max < aun_red_buffer[samples_read]) un_max = aun_red_buffer[samples_read];
-            
             samples_read++;
-            
-            // 每读 100 个样本打印进度
-            if (samples_read % 100 == 0) {
+            // 每读 200 个样本打印进度
+            if (samples_read % 200 == 0) {
                 ESP_LOGI(TAG, "Collected %d samples", samples_read);
             }
         } else {
             vTaskDelay(pdMS_TO_TICKS(5));  // 没有数据时，稍微延迟后再读
         }
     }
-    
     ESP_LOGI(TAG, "Sample collection complete!");
 
     // 3. 算法计算
     Max30102_Algorithm_Calculate(aun_ir_buffer, n_ir_buffer_length, aun_red_buffer, &n_spo2, &ch_spo2_valid, &n_heart_rate, &ch_hr_valid);
-    
     ESP_LOGI(TAG, "Ready for heartbeat monitoring...");
 
     // 4. 循环采集和计算
@@ -613,15 +642,12 @@ void Task_Max30102_Monitor(void *pvParameters) {
             if (un_min > aun_red_buffer[i]) un_min = aun_red_buffer[i];
             if (un_max < aun_red_buffer[i]) un_max = aun_red_buffer[i];
         }
-        
         // 采集新样本（轮询模式，定期喂狗）
         samples_read = 400;
         while (samples_read < 500) {
             vTaskDelay(pdMS_TO_TICKS(2));  // 让出CPU
-            
             Max30102_Read_Reg(0x04, &fifo_wp);
             Max30102_Read_Reg(0x06, &fifo_rp);
-            
             if (fifo_wp != fifo_rp) {
                 if (Max30102_Read_Fifo(temp, 6) == ESP_OK) {
                     aun_red_buffer[samples_read] = ((temp[0] & 0x03) << 16) | (temp[1] << 8) | temp[2];
@@ -630,47 +656,33 @@ void Task_Max30102_Monitor(void *pvParameters) {
                 }
             }
         }
-        
         // 调用算法计算
         Max30102_Algorithm_Calculate(aun_ir_buffer, n_ir_buffer_length, aun_red_buffer, &n_spo2, &ch_spo2_valid, &n_heart_rate, &ch_hr_valid);
-        
-        // 算法计算后喂狗
-        // esp_task_wdt_reset();
-        
         // 心率预警检测
         if (ch_hr_valid == 1) {
-            // 更新基准心率
             Max30102_Update_Heart_Rate_Baseline((uint32_t)n_heart_rate);
-            
-            // 检查心率过快预警
             bool warning_active = Max30102_Check_Heart_Rate_Warning((uint32_t)n_heart_rate);
-            
-            // 如果心率过快，记录预警信息
             if (warning_active) {
-                ESP_LOGW(TAG, "癫痫早期症状检测: 心率过快! 当前: %ld bpm, 基准: %lu bpm, 阈值: %lu bpm", 
-                         (long)n_heart_rate, Max30102_Get_Heart_Rate_Baseline(), 
+                ESP_LOGW(TAG, "癫痫早期症状检测: 心率过快! 当前: %ld bpm, 基准: %lu bpm, 阈值: %lu bpm",
+                         (long)n_heart_rate, Max30102_Get_Heart_Rate_Baseline(),
                          Max30102_Get_Heart_Rate_Warning_Threshold());
+                if(!isBuzzerOn)
+                {
+                   buzzer_notify_on_from_sensor(); 
+                }
             }
-            
-            // 通过消息队列发送心率血氧数据
             if (ch_spo2_valid == 1) {
-                Message_Queue_Send_Heart_Rate((uint32_t)n_heart_rate, (uint32_t)n_spo2, 
+                Message_Queue_Send_Heart_Rate((uint32_t)n_heart_rate, (uint32_t)n_spo2,
                                              Max30102_Get_Heart_Rate_Baseline(), warning_active);
             } else {
-                // 如果血氧数据无效，只发送心率数据
-                Message_Queue_Send_Heart_Rate((uint32_t)n_heart_rate, 0, 
+                Message_Queue_Send_Heart_Rate((uint32_t)n_heart_rate, 0,
                                              Max30102_Get_Heart_Rate_Baseline(), warning_active);
             }
-            
-            // 如果检测到预警，发送预警消息
             if (warning_active) {
                 Message_Queue_Send_Alert(false, false, true);
             }
         }
-        
         vTaskDelay(pdMS_TO_TICKS(100));
     }
-    
-    // 任务永远不会到达这里，但为了完整性
     vTaskDelete(NULL);
 }

@@ -5,6 +5,9 @@
 #include "driver/adc.h"
 #include "esp_adc_cal.h"
 
+#define ADC_IN_ON 0
+#define ADC_IN_OFF 1
+
 static const char *TAG = "BatteryLevel";
 
 // --- 全局变量定义 ---
@@ -24,7 +27,18 @@ static esp_err_t Battery_Adc_Calibration_Init(void);
 esp_err_t Battery_Level_Init(void)
 {
     esp_err_t ret = ESP_OK;
-    
+    // 在 Battery_Level_Init 函数开头添加
+	gpio_config_t en_gpio = {
+		.pin_bit_mask = (1ULL << BATTERY_ADC_ENABLED),
+		.mode = GPIO_MODE_OUTPUT,
+		.pull_up_en = GPIO_PULLUP_DISABLE,
+		.pull_down_en = GPIO_PULLDOWN_DISABLE,
+		.intr_type = GPIO_INTR_DISABLE,
+	};
+	gpio_config(&en_gpio);
+	Battery_Set_ENABLE();          // 启用电池电量检测
+	vTaskDelay(pdMS_TO_TICKS(10)); // 等待分压电路稳定
+
     // 配置ADC通道
     ret = adc1_config_width(BATTERY_ADC_WIDTH);
     if (ret != ESP_OK) {
@@ -94,28 +108,19 @@ static esp_err_t Battery_Adc_Calibration_Init(void)
 /**
  * @brief 读取电池电压（原始ADC值）
  */
-esp_err_t Battery_Read_Adc_Value(uint32_t *adc_value)
+uint32_t Battery_Read_Adc_Value()
 {
     if (!Battery_Level_Initialized) {
         ESP_LOGE(TAG, "电池电量检测模块未初始化");
         return ESP_ERR_INVALID_STATE;
     }
-    
-    if (adc_value == NULL) {
-        ESP_LOGE(TAG, "ADC值指针为空");
-        return ESP_ERR_INVALID_ARG;
-    }
-    
     // 读取ADC原始值
     int raw_adc = adc1_get_raw(BATTERY_ADC_CHANNEL);
     if (raw_adc < 0) {
         ESP_LOGE(TAG, "ADC读取失败: %d", raw_adc);
         return ESP_FAIL;
     }
-    
-    *adc_value = (uint32_t)raw_adc;
-    
-    return ESP_OK;
+    return (uint32_t)raw_adc;
 }
 
 /**
@@ -132,26 +137,29 @@ esp_err_t Battery_Read_Voltage(float *voltage)
         ESP_LOGE(TAG, "电压指针为空");
         return ESP_ERR_INVALID_ARG;
     }
-    
-    uint32_t adc_value;
-    esp_err_t ret = Battery_Read_Adc_Value(&adc_value);
-    if (ret != ESP_OK) {
-        return ret;
+
+    // 获取adc值和简单滤波，采样次数减少为16次，防止阻塞
+    uint32_t adc_value = 0;
+    const uint8_t sample_count = 16;
+    for (uint8_t i = 0; i < sample_count; ++i) {
+        adc_value += Battery_Read_Adc_Value();
+        vTaskDelay(pdMS_TO_TICKS(1));   // 延时1ms
     }
-    
+    adc_value /= sample_count;
+
     // 使用校准特性将ADC值转换为电压
     uint32_t voltage_mv = esp_adc_cal_raw_to_voltage(adc_value, adc_chars);
-    
+
     // 转换为伏特并考虑电压分压比
     *voltage = (float)voltage_mv / 1000.0f * VOLTAGE_DIVIDER_RATIO;
-    
+
     return ESP_OK;
 }
 
 /**
- * @brief 计算电池电量百分比
+ * @brief 计算电池电量百分比-用3.3v测试的
  */
-uint8_t Battery_Calculate_Percentage(float voltage)
+uint8_t Battery_Calculate_Percentage_Test33V(float voltage)
 {
     // 限制电压在有效范围内
     if (voltage >= BATTERY_FULL_VOLTAGE) {
@@ -176,6 +184,16 @@ uint8_t Battery_Calculate_Percentage(float voltage)
 }
 
 /**
+ * @brief 计算电池电量百分比-真正用到电池上的
+ */
+
+uint8_t Battery_Calculate_Percentage(float voltage)
+{
+    uint8_t percentage = voltage * 100 / BATTERY_FULL_VOLTAGE;
+    return percentage >= 100?100:percentage;
+}
+
+/**
  * @brief 获取当前电池电量百分比
  */
 uint8_t Battery_Get_Level(void)
@@ -189,4 +207,21 @@ uint8_t Battery_Get_Level(void)
 float Battery_Get_Voltage(void)
 {
     return Battery_Voltage;
+}
+
+/**
+ * @brief 启用电池电量检测
+*/
+void Battery_Set_ENABLE(void)
+{
+	gpio_set_level(BATTERY_ADC_ENABLED, ADC_IN_ON);
+}
+
+
+/**
+ * @brief 禁用电池电量检测
+*/
+void Battery_Set_DISABLE(void)
+{
+	gpio_set_level(BATTERY_ADC_ENABLED, ADC_IN_OFF);
 }
