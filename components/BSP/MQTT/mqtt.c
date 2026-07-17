@@ -2154,10 +2154,6 @@ void Task_MQTT_Message_Handler(void *pvParameters)
 	// ---------- 启动 MQTT ----------
 	MQTT_App_Start(mqtt_app_choice);
 
-	// ---------- 启动 MQTT ----------
-	MQTT_App_Start(mqtt_app_choice);
-
-
     // ---------- 等待 MQTT 连接建立 ----------
     for (int i = 0; i < 10; i++) {
         if (mqtt_connected) break;
@@ -2167,7 +2163,6 @@ void Task_MQTT_Message_Handler(void *pvParameters)
     if (!mqtt_connected) {
         ESP_LOGW(TAG, "⚠️ MQTT 暂未连接，将继续处理消息队列（连接后自动发送）");
     }
-
 
     // ---------- 主循环：从消息队列取数据并上报 ----------
     while (1) {
@@ -2208,7 +2203,6 @@ void Task_MQTT_Message_Handler(void *pvParameters)
 
         char json_data[512] = {0};
 		char time_str[64] = {0};
-		snprintf(time_str, sizeof(time_str), ",\"time\":%lld", ts_ms);
 		
 		snprintf(time_str, sizeof(time_str), ",\"time\":%lld", ts_ms);
 		
@@ -2219,17 +2213,6 @@ void Task_MQTT_Message_Handler(void *pvParameters)
                     message.Data.Heart_Rate_SPO2_Data.Heart_Rate, 
                     message.Data.Heart_Rate_SPO2_Data.SpO2,
                     Get_isFall());
-
-                snprintf(json_data, sizeof(json_data), 
-                        "{\"id\":\"%d\",\"version\":\"1.0\",\"params\":{"
-                        "\"heart_rate\":{\"value\":%lu %s},"
-                        "\"oxygen_saturation\":{\"value\":%lu %s},"
-                        "\"seizure_risk_level\":{\"value\":%d %s}" 
-                        "}}",
-                        rand() % 1000,
-                        message.Data.Heart_Rate_SPO2_Data.Heart_Rate, time_str,
-                        message.Data.Heart_Rate_SPO2_Data.SpO2, time_str,
-                        current_risk, time_str); // 发送计算出的风险等级
 
                 snprintf(json_data, sizeof(json_data), 
                         "{\"id\":\"%d\",\"version\":\"1.0\",\"params\":{"
