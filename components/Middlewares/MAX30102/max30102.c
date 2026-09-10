@@ -22,6 +22,19 @@ static int8_t ch_spo2_valid;
 static int32_t n_heart_rate;
 static int8_t ch_hr_valid;
 
+#define PPG_FILTER_HP_HZ       0.5f    // bandpass remove below 0.5Hz
+#define PPG_FILTER_LP_HZ       5.0f    // bandpass remove above 5Hz
+#define PPG_SPIKE_MAX_DELTA   12000    // spike threshold (ADC counts)
+#define HR_CONFIRM_DISCARD_NUM    3    // discard 1st..3rd consecutive jump/down
+
+static uint8_t s_hr_seq_high = 0;
+static uint8_t s_hr_seq_low  = 0;
+static uint32_t s_last_ir  = 0;   // 最新一帧 IR 原始值(100Hz FIFO)
+static uint32_t s_last_red = 0;   // 最新一帧 Red 原始值
+static int32_t s_hr_last_ok  = 0;
+static bool    s_hr_last_ok_valid = false;
+
+
 // --- 心率预警相关变量 ---
 static uint32_t Heart_Rate_Baseline = 70;                    // 基准心率（默认70bpm）
 static uint32_t Heart_Rate_Warning_Threshold = 90;           // 预警阈值（默认比基准高20）
@@ -76,6 +89,10 @@ void Max30102_Heart_Rate_Warning_Init(void)
     Heart_Rate_Stable_Count = 0;
     Heart_Rate_Warning_Active = false;
     Heart_Rate_Baseline_Initialized = false;
+    s_hr_seq_high = 0;
+    s_hr_seq_low  = 0;
+    s_hr_last_ok  = 0;
+    s_hr_last_ok_valid = false;
     
     ESP_LOGI(TAG, "心率预警系统初始化完成");
 }
@@ -203,8 +220,86 @@ esp_err_t Max30102_Read_Fifo(uint8_t *buffer, uint8_t count) {
     return I2c_Read_Bytes(max30102_dev, REG_FIFO_DATA, buffer, count);
 }
 
+void Max30102_Get_Last_Raw(uint32_t *ir, uint32_t *red) {
+    if (ir)  *ir  = s_last_ir;
+    if (red) *red = s_last_red;
+}
+
+float Max30102_Get_Temperature_C(void) {
+    Max30102_Write_Reg(REG_TEMP_CONFIG, 0x01);   // 触发一次温度测量
+    vTaskDelay(pdMS_TO_TICKS(20));
+    uint8_t ti = 0, tf = 0;
+    Max30102_Read_Reg(REG_TEMP_INT,  &ti);
+    Max30102_Read_Reg(REG_TEMP_FRAC, &tf);
+    return (float)((int8_t)ti) + (float)(tf & 0x0F) * 0.0625f;
+}
+
+// ============ sudden-change confirmation: reject single 180/190 spikes ============
+// When HR jumps far above/below the baseline, the first 3 consecutive abnormal
+// readings are discarded (output keeps the last confirmed value) and only the
+// 4th consecutive reading is accepted as a real change. This protects the
+// display, baseline and warning from isolated bad detections.
+
+int32_t Max30102_Confirm_Sudden_Change(int32_t hr, uint8_t hr_valid)
+{
+    if (!hr_valid) {
+        s_hr_seq_high = 0;
+        s_hr_seq_low  = 0;
+        return s_hr_last_ok;
+    }
+    if (!s_hr_last_ok_valid) {
+        s_hr_last_ok = hr;
+        s_hr_last_ok_valid = true;
+        return hr;
+    }
+
+    int32_t baseline = (int32_t)Max30102_Get_Heart_Rate_Baseline();
+    bool too_high = (hr >= baseline + HEART_RATE_WARNING_THRESHOLD_HIGH);
+    bool too_low = (hr <= baseline - HEART_RATE_WARNING_THRESHOLD_LOW);
+
+    if (too_high) {
+        s_hr_seq_low = 0;
+        if (s_hr_seq_high < HR_CONFIRM_DISCARD_NUM) {
+            s_hr_seq_high++;
+            return s_hr_last_ok;       // discard 1st..3rd
+        }
+        s_hr_seq_high++;
+        s_hr_last_ok = hr;             // 4th consecutive: accept
+        return hr;
+    }
+    if (too_low) {
+        s_hr_seq_high = 0;
+        if (s_hr_seq_low < HR_CONFIRM_DISCARD_NUM) {
+            s_hr_seq_low++;
+            return s_hr_last_ok;       // discard 1st..3rd
+        }
+        s_hr_seq_low++;
+        s_hr_last_ok = hr;             // 4th consecutive: accept
+        return hr;
+    }
+
+    s_hr_seq_high = 0;                 // back to normal: reset counters
+    s_hr_seq_low  = 0;
+    s_hr_last_ok  = hr;
+    return hr;
+}
+
 uint8_t Max30102_Can_Read(void) {
     return max30102_int_flag ? 1 : 0;
+}
+
+static int32_t s_fused_hr = 0;
+static uint8_t s_fused_valid = 0;
+
+int32_t Max30102_Get_Raw_Heart_Rate(void)         { return n_heart_rate; }
+uint8_t Max30102_Get_Raw_Heart_Rate_Valid(void)   { return ch_hr_valid; }
+int32_t Max30102_Get_Raw_SpO2(void)               { return n_spo2; }
+int32_t Max30102_Get_Fused_Heart_Rate(void)       { return s_fused_hr; }
+uint8_t Max30102_Get_Fused_Heart_Rate_Valid(void) { return s_fused_valid; }
+void Max30102_Set_Fused_Heart_Rate(int32_t fused_hr, uint8_t fused_valid)
+{
+    s_fused_hr = fused_hr;
+    s_fused_valid = fused_valid ? 1 : 0;
 }
 
 uint32_t Max301020_Get_Heart_Rate(void) {
@@ -246,6 +341,28 @@ void Max30102_Gpio_Isr_Init(TaskHandle_t task_handle) {
 
 // --- 汉明窗系数 ---
 static const uint16_t auw_hamm[5] = { 41, 276, 512, 276, 41 };
+// --- PPG bandpass prefilter (0.5-5Hz cascade HP+LP) for HR peak detection ---
+// Stateful IIR: state persists across overlapping windows, so every window is a
+// continuous segment of the same stream (no cold-start transient, no missed beats).
+static double s_bp_y  = 0.0;
+static double s_bp_xp = 0.0;
+static double s_bp_o  = 0.0;
+
+static void ppg_bandpass_filter(const int32_t *in, int32_t *out, int32_t len,
+                                float fs, float hp_hz, float lp_hz) {
+    const float wh = 2.0f * 3.14159265358979f * hp_hz / fs;
+    const float wl = 2.0f * 3.14159265358979f * lp_hz / fs;
+    const float alpha_hp = 1.0f / (1.0f + wh);
+    const float beta_lp  = 1.0f - expf(-wl);
+    for (int32_t k = 0; k < len; k++) {
+        double x = (double)in[k];
+        s_bp_y  = alpha_hp * (s_bp_y + x - s_bp_xp);
+        s_bp_xp = x;
+        s_bp_o += beta_lp * (s_bp_y - s_bp_o);
+        out[k] = (int32_t)s_bp_o;
+    }
+    for (int32_t k = 0; k < len && k < 16; k++) out[k] = 0; // residual edge only
+}
 
 // --- SpO2 查找表 ---
 static const uint8_t spo2_table[184] = { 
@@ -335,12 +452,14 @@ static void sort_ascend(int32_t *x, int32_t size) {
 // --- 算法实现：计算心率和血氧 ---
 void Max30102_Algorithm_Calculate(uint32_t *ir_buffer, int32_t buffer_len, uint32_t *red_buffer,
                                   int32_t *spo2, int8_t *spo2_valid,
-                                  int32_t *heart_rate, int8_t *hr_valid) {
+                                  int32_t *heart_rate, int8_t *hr_valid,
+                                  uint32_t sample_rate) {
     static int32_t an_dx[MAX30102_BUFFER_SIZE];
     static int32_t an_x[MAX30102_BUFFER_SIZE];
     static int32_t an_y[MAX30102_BUFFER_SIZE];
+    static int32_t an_fb[MAX30102_BUFFER_SIZE];
 
-    uint32_t un_ir_mean;
+    uint32_t un_ir_mean, un_red_mean;
     int32_t k, i, n_exact_ir_valley_locs_count, n_middle_idx;
     int32_t n_th1, n_npks;
     int32_t an_exact_ir_valley_locs[15], an_dx_peak_locs[15];
@@ -356,18 +475,25 @@ void Max30102_Algorithm_Calculate(uint32_t *ir_buffer, int32_t buffer_len, uint3
 
     // 1. 去除IR信号的直流分量
     un_ir_mean = 0;
-    for (k = 0; k < buffer_len; k++) un_ir_mean += ir_buffer[k];
+    un_red_mean = 0;
+    for (k = 0; k < buffer_len; k++) { un_ir_mean += ir_buffer[k]; un_red_mean += red_buffer[k]; }
     un_ir_mean = un_ir_mean / buffer_len;
-    for (k = 0; k < buffer_len; k++) an_x[k] = ir_buffer[k] - un_ir_mean;
+    un_red_mean = un_red_mean / buffer_len;
+    for (k = 0; k < buffer_len; k++) {
+        an_x[k] = ir_buffer[k] - un_ir_mean;
+        an_y[k] = red_buffer[k] - un_red_mean;
+    }
+    // bandpass for HR peak detection; SpO2 uses the DC-free channels above
+    ppg_bandpass_filter(an_x, an_fb, buffer_len, (float)sample_rate, PPG_FILTER_HP_HZ, PPG_FILTER_LP_HZ);
 
     // 2. 4点滑动平均平滑处理
     for (k = 0; k < buffer_len - MAX30102_MA4_SIZE; k++) {
-        an_x[k] = (an_x[k] + an_x[k + 1] + an_x[k + 2] + an_x[k + 3]) / 4;
+        an_fb[k] = (an_fb[k] + an_fb[k + 1] + an_fb[k + 2] + an_fb[k + 3]) / 4;
     }
 
     // 3. 计算微分信号并进行汉明窗处理
     for (k = 0; k < buffer_len - MAX30102_MA4_SIZE - 1; k++)
-        an_dx[k] = (an_x[k + 1] - an_x[k]);
+        an_dx[k] = (an_fb[k + 1] - an_fb[k]);
 
     for (i = 0; i < buffer_len - MAX30102_HAMMING_SIZE - MAX30102_MA4_SIZE - 2; i++) {
         an_dx[i] = (an_dx[i] * auw_hamm[0] + an_dx[i + 1] * auw_hamm[1] + 
@@ -382,25 +508,37 @@ void Max30102_Algorithm_Calculate(uint32_t *ir_buffer, int32_t buffer_len, uint3
     }
     n_th1 = n_th1 / (buffer_len - MAX30102_HAMMING_SIZE);
 
-    find_peaks(an_dx_peak_locs, &n_npks, an_dx, buffer_len - MAX30102_HAMMING_SIZE, n_th1, 8, 5);
+    find_peaks(an_dx_peak_locs, &n_npks, an_dx, buffer_len - MAX30102_HAMMING_SIZE, n_th1, 8, 15);
 
     if (n_npks >= 2) {
-        n_peak_interval_sum = 0;
-        for (k = 1; k < n_npks; k++)
-            n_peak_interval_sum += (an_dx_peak_locs[k] - an_dx_peak_locs[k - 1]);
-        n_peak_interval_sum = n_peak_interval_sum / (n_npks - 1);
-        if (n_peak_interval_sum > 0) {
-            *heart_rate = (int32_t)(6000 / n_peak_interval_sum);
+        int32_t an_intv[15];
+        int32_t n_cnt = 0;
+        for (k = 1; k < n_npks && n_cnt < 15; k++)
+            an_intv[n_cnt++] = an_dx_peak_locs[k] - an_dx_peak_locs[k - 1];
+        if (n_cnt > 1) {
+            sort_ascend(an_intv, n_cnt);
+            n_peak_interval_sum = (n_cnt % 2) ? an_intv[n_cnt / 2]
+                                              : (an_intv[n_cnt / 2 - 1] + an_intv[n_cnt / 2]) / 2;
+        } else {
+            n_peak_interval_sum = an_intv[0];
         }
-        *hr_valid = 1;
+        if (n_peak_interval_sum > 0) {
+            int32_t hr = (int32_t)(60 * (int64_t)sample_rate / n_peak_interval_sum);
+            if (hr >= HEART_RATE_MIN_VALID && hr <= HEART_RATE_MAX_VALID) {
+                *heart_rate = hr;
+                *hr_valid = 1;
+            } else {
+                *hr_valid = 0;
+            }
+        } else {
+            *hr_valid = 0;
+        }
     } else {
         *hr_valid = 0;
     }
 
     // 5. 准备血氧计算所需的AC/DC分量
-    for (k = 0; k < buffer_len; k++) {
-        an_y[k] = red_buffer[k] - un_ir_mean;
-    }
+    // an_y (RED AC) was computed in step 1 using RED own DC
 
     n_exact_ir_valley_locs_count = 0;
     for (k = 0; k < n_npks && n_exact_ir_valley_locs_count < 15; k++) {
@@ -476,6 +614,7 @@ void Max30102_Algorithm_Calculate(uint32_t *ir_buffer, int32_t buffer_len, uint3
 
 // --- VOFA+ 原生格式波形数据输出 ---
 // 输出格式符合VOFA+的多通道数据要求: ch0,ch1,ch2,ch3\n
+
 void Max30102_Send_Waveform_Data(void) {
     // 输出最后100个样本，每行一个样本数据
     // 格式: RED值,IR值,心率,血氧
@@ -557,6 +696,7 @@ void Task_Max30102_Monitor(void *pvParameters) {
     int i;
 	static uint32_t last_buzzer_time = 0;
 	static bool isBuzzerOn = false;
+	static uint32_t prev_red = 0, prev_ir = 0;  // spike guard
     
     ESP_LOGI(TAG, "Monitor task started");
 
@@ -614,8 +754,20 @@ void Task_Max30102_Monitor(void *pvParameters) {
             if (ret != ESP_OK) {
                 continue;
             }
-            aun_red_buffer[samples_read] = ((temp[0] & 0x03) << 16) | (temp[1] << 8) | temp[2];
-            aun_ir_buffer[samples_read] = ((temp[3] & 0x03) << 16) | (temp[4] << 8) | temp[5];
+            uint32_t red_v = ((temp[0] & 0x03) << 16) | (temp[1] << 8) | temp[2];
+            uint32_t ir_v  = ((temp[3] & 0x03) << 16) | (temp[4] << 8) | temp[5];
+            // spike guard: replace huge single-sample jump with previous value
+            if (samples_read > 0 &&
+                (labs((int32_t)red_v - (int32_t)prev_red) > PPG_SPIKE_MAX_DELTA ||
+                 labs((int32_t)ir_v  - (int32_t)prev_ir)  > PPG_SPIKE_MAX_DELTA)) {
+                red_v = prev_red;
+                ir_v  = prev_ir;
+            }
+            prev_red = red_v;
+            prev_ir  = ir_v;
+            s_last_ir = ir_v; s_last_red = red_v;
+            aun_red_buffer[samples_read] = red_v;
+            aun_ir_buffer[samples_read]  = ir_v;
             if (un_min > aun_red_buffer[samples_read]) un_min = aun_red_buffer[samples_read];
             if (un_max < aun_red_buffer[samples_read]) un_max = aun_red_buffer[samples_read];
             samples_read++;
@@ -630,7 +782,7 @@ void Task_Max30102_Monitor(void *pvParameters) {
     ESP_LOGI(TAG, "Sample collection complete!");
 
     // 3. 算法计算
-    Max30102_Algorithm_Calculate(aun_ir_buffer, n_ir_buffer_length, aun_red_buffer, &n_spo2, &ch_spo2_valid, &n_heart_rate, &ch_hr_valid);
+    Max30102_Algorithm_Calculate(aun_ir_buffer, n_ir_buffer_length, aun_red_buffer, &n_spo2, &ch_spo2_valid, &n_heart_rate, &ch_hr_valid, 100);
     ESP_LOGI(TAG, "Ready for heartbeat monitoring...");
 
     // 4. 循环采集和计算
@@ -650,21 +802,37 @@ void Task_Max30102_Monitor(void *pvParameters) {
             Max30102_Read_Reg(0x06, &fifo_rp);
             if (fifo_wp != fifo_rp) {
                 if (Max30102_Read_Fifo(temp, 6) == ESP_OK) {
-                    aun_red_buffer[samples_read] = ((temp[0] & 0x03) << 16) | (temp[1] << 8) | temp[2];
-                    aun_ir_buffer[samples_read] = ((temp[3] & 0x03) << 16) | (temp[4] << 8) | temp[5];
+                    uint32_t red_v = ((temp[0] & 0x03) << 16) | (temp[1] << 8) | temp[2];
+                    uint32_t ir_v  = ((temp[3] & 0x03) << 16) | (temp[4] << 8) | temp[5];
+                    // spike guard: replace huge single-sample jump with previous value
+                    if (samples_read > 0 &&
+                        (labs((int32_t)red_v - (int32_t)prev_red) > PPG_SPIKE_MAX_DELTA ||
+                         labs((int32_t)ir_v  - (int32_t)prev_ir)  > PPG_SPIKE_MAX_DELTA)) {
+                        red_v = prev_red;
+                        ir_v  = prev_ir;
+                    }
+                    prev_red = red_v;
+                    prev_ir  = ir_v;
+                    s_last_ir = ir_v; s_last_red = red_v;
+                    aun_red_buffer[samples_read] = red_v;
+                    aun_ir_buffer[samples_read]  = ir_v;
                     samples_read++;
                 }
             }
         }
         // 调用算法计算
-        Max30102_Algorithm_Calculate(aun_ir_buffer, n_ir_buffer_length, aun_red_buffer, &n_spo2, &ch_spo2_valid, &n_heart_rate, &ch_hr_valid);
-        // 心率预警检测
-        if (ch_hr_valid == 1) {
-            Max30102_Update_Heart_Rate_Baseline((uint32_t)n_heart_rate);
-            bool warning_active = Max30102_Check_Heart_Rate_Warning((uint32_t)n_heart_rate);
+        Max30102_Algorithm_Calculate(aun_ir_buffer, n_ir_buffer_length, aun_red_buffer, &n_spo2, &ch_spo2_valid, &n_heart_rate, &ch_hr_valid, 100);
+                // 心率预警检测（使用 SignalFusion 融合结果，未就绪时回退 raw）
+        int32_t hr_used = Max30102_Get_Fused_Heart_Rate();
+        uint8_t fused_ready = Max30102_Get_Fused_Heart_Rate_Valid();
+        if (!fused_ready) { hr_used = n_heart_rate; fused_ready = ch_hr_valid; }
+        if (fused_ready) {
+            hr_used = Max30102_Confirm_Sudden_Change(hr_used, 1);
+            Max30102_Update_Heart_Rate_Baseline((uint32_t)hr_used);
+            bool warning_active = Max30102_Check_Heart_Rate_Warning((uint32_t)hr_used);
             if (warning_active) {
                 ESP_LOGW(TAG, "癫痫早期症状检测: 心率过快! 当前: %ld bpm, 基准: %lu bpm, 阈值: %lu bpm",
-                         (long)n_heart_rate, Max30102_Get_Heart_Rate_Baseline(),
+                         (long)hr_used, Max30102_Get_Heart_Rate_Baseline(),
                          Max30102_Get_Heart_Rate_Warning_Threshold());
                 if(!isBuzzerOn)
                 {
@@ -672,16 +840,17 @@ void Task_Max30102_Monitor(void *pvParameters) {
                 }
             }
             if (ch_spo2_valid == 1) {
-                Message_Queue_Send_Heart_Rate((uint32_t)n_heart_rate, (uint32_t)n_spo2,
+                Message_Queue_Send_Heart_Rate((uint32_t)hr_used, (uint32_t)n_spo2,
                                              Max30102_Get_Heart_Rate_Baseline(), warning_active);
             } else {
-                Message_Queue_Send_Heart_Rate((uint32_t)n_heart_rate, 0,
+                Message_Queue_Send_Heart_Rate((uint32_t)hr_used, 0,
                                              Max30102_Get_Heart_Rate_Baseline(), warning_active);
             }
             if (warning_active) {
                 Message_Queue_Send_Alert(false, false, true);
             }
         }
+
         vTaskDelay(pdMS_TO_TICKS(100));
     }
     vTaskDelete(NULL);

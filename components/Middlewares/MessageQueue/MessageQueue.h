@@ -15,7 +15,8 @@ typedef enum {
     MESSAGE_TYPE_HEART_RATE_SPO2 = 0,
     MESSAGE_TYPE_ACCELEROMETER,
     MESSAGE_TYPE_GYROSCOPE,
-    MESSAGE_TYPE_ALERT
+    MESSAGE_TYPE_ALERT,
+    MESSAGE_TYPE_SEIZURE_MODEL
 } Message_Type_t;
 
 // 心率血氧数据结构体
@@ -47,6 +48,14 @@ typedef struct {
     bool Heart_Rate_Warning;       // 心率预警
 } Alert_Data_t;
 
+// 癫痫模型输出结构体（SignalFusion -> MQTT）
+typedef struct {
+    float    Model_Prob;      // 模型输出发作概率 [0,1]
+    uint32_t Heart_Rate;      // 融合后心率 (bpm)
+    uint32_t SpO2;            // 血氧 (%)
+    bool     Abnormal_Motion; // 异常运动检测 0/1
+} Seizure_Model_Data_t;
+
 // 通用消息结构体
 typedef struct {
     Message_Type_t Message_Type;   // 消息类型
@@ -56,6 +65,7 @@ typedef struct {
         Accelerometer_Data_t Accelerometer_Data;
         Gyroscope_Data_t Gyroscope_Data;
         Alert_Data_t Alert_Data;
+        Seizure_Model_Data_t Seizure_Model_Data;
     } Data;
 } Sensor_Message_t;
 
@@ -81,6 +91,7 @@ bool Message_Queue_Send_Heart_Rate(uint32_t heart_rate, uint32_t spo2, uint32_t 
 bool Message_Queue_Send_Accelerometer(int16_t ax, int16_t ay, int16_t az);
 bool Message_Queue_Send_Gyroscope(int16_t gx, int16_t gy, int16_t gz);
 bool Message_Queue_Send_Alert(bool fall_detected, bool convulsion_detected, bool heart_rate_warning);
+bool Message_Queue_Send_Seizure_Model(float model_prob, uint32_t heart_rate, uint32_t spo2, bool abnormal_motion);
 bool Message_Queue_Receive(QueueHandle_t queue_handle, Sensor_Message_t *message, TickType_t timeout);
 QueueHandle_t Message_Queue_Get_Handle(enum QueueType queue_type);
 

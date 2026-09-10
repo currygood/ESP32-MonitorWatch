@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1900" height="700" viewBox="0 0 1900 700" font-family="Segoe UI, Microsoft YaHei, PingFang SC, sans-serif">
+<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#555"/></marker></defs>
+<text x="950" y="30" text-anchor="middle" font-size="18" font-weight="bold" fill="#333">信号采集 -> 滤波 -> 融合 -> 特征窗口</text>
+<line x1="230" y1="113" x2="300" y2="113" stroke="#555" stroke-width="1.7" marker-end="url(#arr)" />
+<line x1="500" y1="113" x2="570" y2="113" stroke="#555" stroke-width="1.7" marker-end="url(#arr)" />
+<line x1="760" y1="113" x2="830" y2="113" stroke="#555" stroke-width="1.7" marker-end="url(#arr)" />
+<line x1="1020" y1="113" x2="1070" y2="113" stroke="#555" stroke-width="1.7" marker-end="url(#arr)" />
+<line x1="1240" y1="113" x2="1330" y2="235" stroke="#555" stroke-width="1.7" marker-end="url(#arr)" />
+<line x1="230" y1="273" x2="300" y2="273" stroke="#555" stroke-width="1.7" marker-end="url(#arr)" />
+<line x1="490" y1="273" x2="570" y2="273" stroke="#555" stroke-width="1.7" marker-end="url(#arr)" />
+<line x1="760" y1="273" x2="830" y2="273" stroke="#555" stroke-width="1.7" marker-end="url(#arr)" />
+<line x1="1020" y1="273" x2="1070" y2="273" stroke="#555" stroke-width="1.7" marker-end="url(#arr)" />
+<line x1="1240" y1="273" x2="1330" y2="235" stroke="#555" stroke-width="1.7" marker-end="url(#arr)" />
+<polyline points="135,306 135,400 135,560 395,560 395,400 395,400" fill="none" stroke="#555" stroke-width="1.7" marker-end="url(#arr)" stroke-dasharray="7,6" />
+<line x1="490" y1="433" x2="570" y2="433" stroke="#555" stroke-width="1.7" marker-end="url(#arr)" />
+<polyline points="665,466 665,466 665,530 1330,530 1330,330 1460,330" fill="none" stroke="#555" stroke-width="1.7" marker-end="url(#arr)" />
+<line x1="135" y1="306" x2="925" y2="400" stroke="#555" stroke-width="1.7" marker-end="url(#arr)" stroke-dasharray="7,6" />
+<line x1="925" y1="466" x2="1460" y2="330" stroke="#555" stroke-width="1.7" marker-end="url(#arr)" />
+<line x1="1590" y1="235" x2="1660" y2="235" stroke="#555" stroke-width="1.7" marker-end="url(#arr)" />
+<rect x="40" y="80" width="190" height="66" rx="9" fill="#f5f5f5" stroke="#666666" stroke-width="1.7"/>
+<text x="135" y="106" text-anchor="middle" font-size="12" fill="#202020">MPU6050</text>
+<text x="135" y="123" text-anchor="middle" font-size="12" fill="#202020">六轴采样 50Hz</text>
+<rect x="300" y="80" width="200" height="66" rx="9" fill="#e8f0fe" stroke="#6c8ebf" stroke-width="1.7"/>
+<text x="400" y="106" text-anchor="middle" font-size="12" fill="#202020">硬件 DLPF</text>
+<text x="400" y="123" text-anchor="middle" font-size="12" fill="#202020">ACC 21Hz / GYRO 20Hz</text>
+<rect x="570" y="80" width="190" height="66" rx="9" fill="#e8f0fe" stroke="#6c8ebf" stroke-width="1.7"/>
+<text x="665" y="106" text-anchor="middle" font-size="12" fill="#202020">单点尖峰抑制</text>
+<text x="665" y="123" text-anchor="middle" font-size="12" fill="#202020">±1g / ±61°/s</text>
+<rect x="830" y="80" width="190" height="66" rx="9" fill="#e8f0fe" stroke="#6c8ebf" stroke-width="1.7"/>
+<text x="925" y="106" text-anchor="middle" font-size="12" fill="#202020">EMA 一阶低通</text>
+<text x="925" y="123" text-anchor="middle" font-size="12" fill="#202020">α=0.40  fc≈4.1Hz</text>
+<rect x="1070" y="80" width="170" height="66" rx="9" fill="#e8f0fe" stroke="#6c8ebf" stroke-width="1.7"/>
+<text x="1155" y="106" text-anchor="middle" font-size="12" fill="#202020">运动指数</text>
+<text x="1155" y="123" text-anchor="middle" font-size="12" fill="#202020">滤波后加速度</text>
+<rect x="40" y="240" width="190" height="66" rx="9" fill="#f5f5f5" stroke="#666666" stroke-width="1.7"/>
+<text x="135" y="266" text-anchor="middle" font-size="12" fill="#202020">MAX30102 采样 50Hz</text>
+<text x="135" y="283" text-anchor="middle" font-size="12" fill="#202020">IR / RED / 温度</text>
+<rect x="300" y="240" width="190" height="66" rx="9" fill="#e8f0fe" stroke="#6c8ebf" stroke-width="1.7"/>
+<text x="395" y="266" text-anchor="middle" font-size="12" fill="#202020">PPG IIR 带通</text>
+<text x="395" y="283" text-anchor="middle" font-size="12" fill="#202020">0.5~5Hz</text>
+<rect x="570" y="240" width="190" height="66" rx="9" fill="#e8f0fe" stroke="#6c8ebf" stroke-width="1.7"/>
+<text x="665" y="266" text-anchor="middle" font-size="12" fill="#202020">峰值检测</text>
+<text x="665" y="283" text-anchor="middle" font-size="12" fill="#202020">提取原始心率</text>
+<rect x="830" y="240" width="190" height="66" rx="9" fill="#e8f0fe" stroke="#6c8ebf" stroke-width="1.7"/>
+<text x="925" y="266" text-anchor="middle" font-size="12" fill="#202020">突变确认</text>
+<text x="925" y="283" text-anchor="middle" font-size="12" fill="#202020">连续 3 次才采信</text>
+<rect x="1070" y="240" width="170" height="66" rx="9" fill="#e8f0fe" stroke="#6c8ebf" stroke-width="1.7"/>
+<text x="1155" y="275" text-anchor="middle" font-size="12" fill="#202020">原始心率</text>
+<rect x="300" y="400" width="190" height="66" rx="9" fill="#e8f0fe" stroke="#6c8ebf" stroke-width="1.7"/>
+<text x="395" y="426" text-anchor="middle" font-size="12" fill="#202020">R 比值</text>
+<text x="395" y="443" text-anchor="middle" font-size="12" fill="#202020">5 点中位数</text>
+<rect x="570" y="400" width="190" height="66" rx="9" fill="#e8f0fe" stroke="#6c8ebf" stroke-width="1.7"/>
+<text x="665" y="426" text-anchor="middle" font-size="12" fill="#202020">SpO2 饱和度</text>
+<text x="665" y="443" text-anchor="middle" font-size="12" fill="#202020">查表</text>
+<rect x="830" y="400" width="190" height="66" rx="9" fill="#e8f0fe" stroke="#6c8ebf" stroke-width="1.7"/>
+<text x="925" y="435" text-anchor="middle" font-size="12" fill="#202020">温度 temp</text>
+<rect x="1330" y="140" width="260" height="190" rx="9" fill="#d5e8d4" stroke="#82b366" stroke-width="1.7"/>
+<text x="1460" y="203" text-anchor="middle" font-size="12" fill="#202020">SignalFusion 卡尔曼融合</text>
+<text x="1460" y="220" text-anchor="middle" font-size="12" fill="#202020">Q=0.5, R=9+60*motion</text>
+<text x="1460" y="237" text-anchor="middle" font-size="12" fill="#202020">motion>=1 冻结</text>
+<text x="1460" y="254" text-anchor="middle" font-size="12" fill="#202020">连续 8 帧无效置无效</text>
+<text x="1460" y="271" text-anchor="middle" font-size="12" fill="#202020">HR 40~200 bpm</text>
+<rect x="1660" y="140" width="200" height="190" rx="9" fill="#d5e8d4" stroke="#82b366" stroke-width="1.7"/>
+<text x="1760" y="228" text-anchor="middle" font-size="12" fill="#202020">特征窗口 200x7</text>
+<text x="1760" y="245" text-anchor="middle" font-size="12" fill="#202020">(10s @ 20Hz)</text>
+</svg>

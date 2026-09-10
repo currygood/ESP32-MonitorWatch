@@ -1,6 +1,6 @@
 idf_component_register(SRCS "main.c"
                     INCLUDE_DIRS "."
-                    REQUIRES BSP Middlewares ulp soc nvs_flash driver)
+                    REQUIRES BSP Middlewares SignalFusion ulp soc nvs_flash driver)
 					
 #
 # ULP support additions to component CMakeLists.txt.
@@ -24,3 +24,4 @@ set(ulp_exp_dep_srcs "ulp_main.c")
 ulp_embed_binary(${ulp_app_name} "${ulp_riscv_sources}" "${ulp_exp_dep_srcs}")
 
 spiffs_create_partition_image(storage ../html FLASH_IN_PROJECT)
+spiffs_create_partition_image(model ../model FLASH_IN_PROJECT)

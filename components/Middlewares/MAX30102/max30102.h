@@ -31,6 +31,9 @@
 #define REG_LED1_PA         0x0C
 #define REG_LED2_PA         0x0D
 #define REG_PILOT_PA        0x10
+#define REG_TEMP_INT        0x1F
+#define REG_TEMP_FRAC       0x20
+#define REG_TEMP_CONFIG     0x21
 #define REG_PART_ID         0xFF
 
 // 算法相关宏
@@ -46,7 +49,7 @@
 #define HEART_RATE_WARNING_THRESHOLD_HIGH 30   // 预警阈值上限（比基准高30）
 #define HEART_RATE_STABLE_COUNT          10    // 心率稳定连续次数
 #define HEART_RATE_MIN_VALID             40    // 最小有效心率
-#define HEART_RATE_MAX_VALID             180   // 最大有效心率
+#define HEART_RATE_MAX_VALID             200   // 最大有效心率（与 SignalFusion 统一）
 
 // --- API声明 ---
 void Max30102_Init(i2c_master_bus_handle_t bus_handle);
@@ -59,7 +62,21 @@ void Max30102_Clear_Flag(void);
 
 void Max30102_Algorithm_Calculate(uint32_t *ir_buffer, int32_t buffer_len, uint32_t *red_buffer,
                                   int32_t *spo2, int8_t *spo2_valid,
-                                  int32_t *heart_rate, int8_t *hr_valid);
+                                  int32_t *heart_rate, int8_t *hr_valid,
+                                  uint32_t sample_rate);
+
+// --- 供上层融合（SignalFusion）使用的接口 ---
+int32_t Max30102_Get_Raw_Heart_Rate(void);
+uint8_t Max30102_Get_Raw_Heart_Rate_Valid(void);
+int32_t Max30102_Get_Raw_SpO2(void);
+int32_t Max30102_Get_Fused_Heart_Rate(void);
+uint8_t Max30102_Get_Fused_Heart_Rate_Valid(void);
+void    Max30102_Set_Fused_Heart_Rate(int32_t fused_hr, uint8_t fused_valid);
+
+// --- 供癫痫模型(SignalFusion)使用的原始数据接口 ---
+void  Max30102_Get_Last_Raw(uint32_t *ir, uint32_t *red);
+float Max30102_Get_Temperature_C(void);
+
 void Max30102_Disable_Interrupts_For_ULP(void);
 
 // --- 监测任务 ---
@@ -80,5 +97,6 @@ uint32_t Max30102_Get_Heart_Rate_Baseline(void);
 uint32_t Max30102_Get_Heart_Rate_Warning_Threshold(void);
 bool Max30102_Is_Heart_Rate_Warning_Active(void);
 void Max30102_Reset_Heart_Rate_Warning(void);
+int32_t Max30102_Confirm_Sudden_Change(int32_t hr, uint8_t hr_valid);
 
 #endif // MAX30102_H

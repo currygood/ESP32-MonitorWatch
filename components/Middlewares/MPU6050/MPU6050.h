@@ -49,6 +49,8 @@ void Mpu6050_Clear_Flag(void);
 // --- 数据获取函数 ---
 void Mpu6050_Get_Accel_Data(int16_t *ax, int16_t *ay, int16_t *az);
 void Mpu6050_Get_Gyro_Data(int16_t *gx, int16_t *gy, int16_t *gz);
+// 运动指数（|幅值-1g| 的 EMA），供上层 SignalFusion 融合使用
+float Mpu6050_Get_Motion_Index(void);
 
 void Task_Mpu6050_Monitor(void *pvParameters);
 

@@ -15,6 +15,7 @@
 #include "mbedtls/md.h"
 #include "cJSON.h"
 #include "esp_spiffs.h"
+#include "apcfg_html_fallback.h"
 #include "http_parser.h"
 #include "esp_http_server.h"
 #include "onenet_token.h"
@@ -113,17 +114,23 @@ static esp_err_t MQTT_Onenet_OTA_Ack(const char *id,int code,const char* msg);
 
 void MQTT_Get_SendTopic(char* topic)
 {
-	strncpy(topic, SendTopic, sizeof(topic));
+	if(topic == NULL) return;
+	strncpy(topic, SendTopic, TOPIC_STR_SIZE - 1);
+	topic[TOPIC_STR_SIZE - 1] = '\0';
 }
 
 void MQTT_Get_RecvSetTopic(char* topic)
 {
-	strncpy(topic, RecvSetTopic, sizeof(topic));
+	if(topic == NULL) return;
+	strncpy(topic, RecvSetTopic, TOPIC_STR_SIZE - 1);
+	topic[TOPIC_STR_SIZE - 1] = '\0';
 }
 
 void MQTT_Get_OTATopic(char* topic)
 {
-	strncpy(topic, OTATopic, sizeof(topic));
+	if(topic == NULL) return;
+	strncpy(topic, OTATopic, TOPIC_STR_SIZE - 1);
+	topic[TOPIC_STR_SIZE - 1] = '\0';
 }
 
 esp_mqtt_client_handle_t MQTT_Give()
@@ -332,23 +339,30 @@ static esp_err_t handle_ws_req(httpd_req_t *req)
     esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, 0);
     if (ret != ESP_OK)
     {
-        return ret;
+        ESP_LOGI(TAG, "ws frame probe failed (%s), ignore", esp_err_to_name(ret));
+        return ESP_OK;
     }
     if (ws_pkt.len)
     {
+        /* 异常超大帧直接丢弃，不做内存分配 */
+        if (ws_pkt.len > 4096)
+        {
+            ESP_LOGI(TAG, "ws frame too large (%u), drop", (unsigned)ws_pkt.len);
+            return ESP_OK;
+        }
         buf = calloc(1, ws_pkt.len + 1);
         if (buf == NULL)
         {
             ESP_LOGE(TAG, "Failed to calloc memory for buf");
-            return ESP_ERR_NO_MEM;
+            return ESP_OK;
         }
         ws_pkt.payload = buf;
         ret = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
         if (ret != ESP_OK)
         {
-            ESP_LOGE(TAG, "httpd_ws_recv_frame failed with %d", ret);
+            ESP_LOGI(TAG, "ws frame payload recv failed (%s), ignore", esp_err_to_name(ret));
             free(buf);
-            return ret;
+            return ESP_OK;
         }
         ESP_LOGI(TAG, "Got packet with message: %s", ws_pkt.payload);
     }
@@ -368,12 +382,17 @@ static esp_err_t handle_ws_req(httpd_req_t *req)
 */
 esp_err_t get_req_handler(httpd_req_t *req)
 {
-    esp_err_t response = ESP_FAIL;
-    if(http_html)
-    {
-        response = httpd_resp_send(req, http_html, HTTPD_RESP_USE_STRLEN);
+    if (!http_html) {
+        // SPIFFS page missing: serve the built-in copy so provisioning works
+        return httpd_resp_send(req, apcfg_html_fallback, sizeof(apcfg_html_fallback) - 1);
     }
-    return response;
+    esp_err_t ret = httpd_resp_send(req, http_html, HTTPD_RESP_USE_STRLEN);
+    if (ret != ESP_OK) {
+        // client likely closed the connection mid-response; keep the request
+        // state OK so httpd does not flag "uri handler execution failed"
+        ESP_LOGI(TAG, "httpd_resp_send: %s (client closed?)", esp_err_to_name(ret));
+    }
+    return ESP_OK;
 }
 
 esp_err_t   web_ws_send(uint8_t* data, int len)
@@ -394,7 +413,7 @@ esp_err_t   web_ws_start(ws_cfg_t *cfg)
 {
     if(cfg == NULL)
         return ESP_FAIL;
-    http_html = cfg->html_code;
+    http_html = (cfg->html_code != NULL) ? cfg->html_code : (char*)apcfg_html_fallback;
     ws_receive_fn = cfg->receive_fn;
 
     //http和websocket初始化
@@ -414,21 +433,42 @@ esp_err_t   web_ws_start(ws_cfg_t *cfg)
         .is_websocket = true
     };
 
-    if (httpd_start(&http_ws_server, &config) == ESP_OK)
-    {
-        httpd_register_uri_handler(http_ws_server, &uri_get);
-        httpd_register_uri_handler(http_ws_server, &ws);
+    // clear any stale handle left by a previous failed stop
+    if (http_ws_server) {
+        httpd_stop(http_ws_server);
+        http_ws_server = NULL;
     }
+
+    // right after esp_wifi_start() the AP interface may not be up yet, so
+    // retry httpd_start a few times before giving up
+    esp_err_t ret = ESP_FAIL;
+    for (int attempt = 0; attempt < 5; attempt++) {
+        ret = httpd_start(&http_ws_server, &config);
+        if (ret == ESP_OK) {
+            break;
+        }
+        http_ws_server = NULL;
+        ESP_LOGW(TAG, "httpd_start attempt %d failed: %s", attempt + 1, esp_err_to_name(ret));
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "httpd_start failed after retries, no web server available");
+        return ESP_FAIL;
+    }
+
+    httpd_register_uri_handler(http_ws_server, &uri_get);
+    httpd_register_uri_handler(http_ws_server, &ws);
+    ESP_LOGI(TAG, "web server listening on port %d", config.server_port);
 
     return ESP_OK;
 }
 
 esp_err_t   web_ws_stop(void)
 {
-    if(http_ws_server)
-    {
-        return httpd_stop(http_ws_server);
-        http_ws_server = NULL;
+    httpd_handle_t srv = http_ws_server;
+    if (srv) {
+        http_ws_server = NULL;   // clear BEFORE stop so re-entry is safe
+        return httpd_stop(srv);
     }
     return ESP_OK;
 }
@@ -673,23 +713,26 @@ static char* initi_web_page_buffer(void)
     if (stat(INDEX_HTML_PATH, &st))
     {
         ESP_LOGE(TAG, "apcfg.html not found");
-        return NULL;
+        ESP_LOGI(TAG, "falling back to built-in apcfg page");
+        return (char*)apcfg_html_fallback;
     }
     //打开html文件并且读取到内存中
     char* page = (char*)malloc(st.st_size + 1);
     if(!page)
     {
-        return NULL;
+        ESP_LOGW(TAG, "malloc failed, falling back to built-in apcfg page");
+        return (char*)apcfg_html_fallback;
     }
     memset(page,0,st.st_size + 1);
     FILE *fp = fopen(INDEX_HTML_PATH, "r");
-    if (fread(page, st.st_size, 1, fp) == 0)
+    size_t got = fread(page, 1, st.st_size, fp);
+    fclose(fp);
+    if (got == 0)
     {
         free(page);
-        page = NULL;
-        ESP_LOGE(TAG, "fread failed");
+        ESP_LOGE(TAG, "fread failed, falling back to built-in apcfg page");
+        return (char*)apcfg_html_fallback;
     }
-    fclose(fp);
     return page;
 }
 
@@ -827,7 +870,8 @@ void ap_wifi_apcfg(bool enable)
     {
 		ESP_LOGW(TAG, ">>> 启动 AP 配网模式");
         wifi_manager_ap();
-        ws_cfg_t ws = 
+        vTaskDelay(pdMS_TO_TICKS(250));   // let the AP interface settle before binding
+        ws_cfg_t ws =
         {
             .html_code = index_html,
             .receive_fn = ws_receive_handle,
@@ -2075,62 +2119,7 @@ void Task_MQTT_Message_Handler(void *pvParameters)
 			}
 		}
 	}
-	
-	if(ret == THROUGH_NVS_CONNECTION)
-	{
-		mqtt_app_choice = MQTT_App_Start_Direct_State;
-	}
-	else if(ret == NVS_CONNECTION_FAILED || ret == WAITING_FOR_AP_PROVISIONING)
-	{
-		//连接失败，等待ap配网
-		// 直到ap配网完成才会收到通知，才会继续往下走mqtt的初始化
-		if (xTaskNotifyWait(0, 0xFFFFFFFF, &received_cmd, portMAX_DELAY) == pdPASS)
-		{
-			if(received_cmd == AP_Enter_Provision)
-			{
-				ESP_LOGW(TAG,"进入AP配网模式，等待配网完成...");
-				ap_wifi_apcfg(true);
-				// 等待 AP 配网完成的事件通知
-				if(xTaskNotifyWait(0, 0xFFFFFFFF, &received_cmd, pdMS_TO_TICKS(180000)) == pdPASS) 
-				{
-					if(received_cmd == AP_Provision_Complete)
-					{
-						ESP_LOGW(TAG,"AP 配网完成，继续 MQTT 初始化...");
-						mqtt_app_choice = MQTT_APP_Start_AP_State;
-					}
-				}
-				else
-				{
-					ESP_LOGE(TAG,"等待 AP 配网完成事件超时");
-					if (Scan_Task_Handle) {
-						vTaskDelete(Scan_Task_Handle);
-						Scan_Task_Handle = NULL;
-					}
-					if (AP_Task_Handle) {
-						vTaskDelete(AP_Task_Handle);
-						AP_Task_Handle = NULL;
-					}
-					vTaskDelete(NULL);
-					return;
-				}
-			}
-			else
-			{
-				ESP_LOGE(TAG,"!!!收到未知事件通知,删除退出MQTT任务!!!");
-				if (Scan_Task_Handle) {
-					vTaskDelete(Scan_Task_Handle);
-					Scan_Task_Handle = NULL;
-				}
-				if (AP_Task_Handle) {
-					vTaskDelete(AP_Task_Handle);
-					AP_Task_Handle = NULL;
-				}
-				vTaskDelete(NULL);
-				return;
-			}
-		}
-	}
-	
+
     // ---------- 等待网络稳定（手机热点 NAT 需要时间）----------
     vTaskDelay(pdMS_TO_TICKS(3000));
 
@@ -2209,21 +2198,15 @@ void Task_MQTT_Message_Handler(void *pvParameters)
         switch (message.Message_Type) {
 
             case MESSAGE_TYPE_HEART_RATE_SPO2:
-                 int current_risk = Calculate_Risk_Level(
-                    message.Data.Heart_Rate_SPO2_Data.Heart_Rate, 
-                    message.Data.Heart_Rate_SPO2_Data.SpO2,
-                    Get_isFall());
-
+                // 心率/血氧周期性上报；风险等级由模型消息(MESSAGE_TYPE_SEIZURE_MODEL)统一计算
                 snprintf(json_data, sizeof(json_data), 
                         "{\"id\":\"%d\",\"version\":\"1.0\",\"params\":{"
                         "\"heart_rate\":{\"value\":%lu %s},"
-                        "\"oxygen_saturation\":{\"value\":%lu %s},"
-                        "\"seizure_risk_level\":{\"value\":%d %s}" 
+                        "\"oxygen_saturation\":{\"value\":%lu %s}"
                         "}}",
                         rand() % 1000,
                         message.Data.Heart_Rate_SPO2_Data.Heart_Rate, time_str,
-                        message.Data.Heart_Rate_SPO2_Data.SpO2, time_str,
-                        current_risk, time_str); // 发送计算出的风险等级
+                        message.Data.Heart_Rate_SPO2_Data.SpO2, time_str);
 
                 ESP_LOGI(TAG, "📊 心率血氧 HR:%lu SpO2:%lu Base:%lu Warn:%s",
                          message.Data.Heart_Rate_SPO2_Data.Heart_Rate,
@@ -2269,6 +2252,32 @@ void Task_MQTT_Message_Handler(void *pvParameters)
                          message.Data.Alert_Data.Convulsion_Detected ? "Y" : "N",
                          message.Data.Alert_Data.Heart_Rate_Warning  ? "Y" : "N");
                 break;
+
+            case MESSAGE_TYPE_SEIZURE_MODEL:
+            {
+                Seizure_Model_Data_t *md = &message.Data.Seizure_Model_Data;
+                int risk = (int)(md->Model_Prob * 100.0f);
+                if (risk < 0) risk = 0;
+                if (risk > 100) risk = 100;
+                if (md->SpO2 >= 1 && md->SpO2 < 90 && risk < 90) risk = 90; // 血氧过低兜底
+                snprintf(json_data, sizeof(json_data),
+                        "{\"id\":\"%d\",\"version\":\"1.0\",\"params\":{"
+                        "\"abnormal_motion_detected\":{\"value\":%s %s},"
+                        "\"heart_rate\":{\"value\":%lu %s},"
+                        "\"oxygen_saturation\":{\"value\":%lu %s},"
+                        "\"seizure_risk_level\":{\"value\":%d %s}"
+                        "}}",
+                        rand() % 10000,
+                        md->Abnormal_Motion ? "true" : "false", time_str,
+                        (unsigned long)md->Heart_Rate, time_str,
+                        (unsigned long)md->SpO2, time_str,
+                        risk, time_str);
+                ESP_LOGI(TAG, "模型结果 prob=%.3f risk=%d HR:%lu SpO2:%lu abn:%s",
+                        (double)md->Model_Prob, risk,
+                        (unsigned long)md->Heart_Rate, (unsigned long)md->SpO2,
+                        md->Abnormal_Motion ? "Y" : "N");
+                break;
+            }
 
             default:
                 ESP_LOGW(TAG, "未知消息类型: %d，跳过", message.Message_Type);

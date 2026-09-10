@@ -25,6 +25,7 @@
 #define HR_RISE_THRESHOLD   800   
 #define HR_COOLDOWN_SAMPLES 10    
 #define FINGER_ON_THRESHOLD 20000 
+#define ULP_PPG_SPIKE_MAX_DELTA   12000
 
 // 串口
 #define UART_TX_PIN 4 
@@ -43,6 +44,8 @@ volatile uint32_t wakeup_reason = 0;
 static int hr_abnormal_consecutive_count = 0;
 static int fall_consecutive_count = 0;
 static uint8_t firstIgnore = 4;
+static uint32_t s_prev_red = 0;
+static uint32_t s_prev_ir  = 0;
 
 /* --- 硬件 I2C 封装函数 --- */
 static void i2c_write_reg(uint8_t slave_addr, uint8_t reg_addr, uint8_t value) {
@@ -142,6 +145,20 @@ int main(void) {
 
             uint32_t red = ((uint32_t)(d_max[0] & 0x03) << 16) | ((uint32_t)d_max[1] << 8) | d_max[2];
             uint32_t ir  = ((uint32_t)(d_max[3] & 0x03) << 16) | ((uint32_t)d_max[4] << 8) | d_max[5];
+            /* low-level spike clamp: suppress single-sample jumps */
+            if (s_prev_red != 0) {
+                int32_t d = (int32_t)red - (int32_t)s_prev_red;
+                if (d  > (int32_t)ULP_PPG_SPIKE_MAX_DELTA) red = s_prev_red + ULP_PPG_SPIKE_MAX_DELTA;
+                else if (d < -(int32_t)ULP_PPG_SPIKE_MAX_DELTA) red = (s_prev_red > ULP_PPG_SPIKE_MAX_DELTA) ? (s_prev_red - ULP_PPG_SPIKE_MAX_DELTA) : 0;
+            }
+            if (s_prev_ir != 0) {
+                int32_t d = (int32_t)ir - (int32_t)s_prev_ir;
+                if (d  > (int32_t)ULP_PPG_SPIKE_MAX_DELTA) ir = s_prev_ir + ULP_PPG_SPIKE_MAX_DELTA;
+                else if (d < -(int32_t)ULP_PPG_SPIKE_MAX_DELTA) ir = (s_prev_ir > ULP_PPG_SPIKE_MAX_DELTA) ? (s_prev_ir - ULP_PPG_SPIKE_MAX_DELTA) : 0;
+            }
+            s_prev_red = red;
+            s_prev_ir  = ir;
+
 
 			// 防御性检查：如果 IR 读数始终为 0 或 0x3FFFF (MAX30102 NACK时的表现)
             // 这通常意味着 I2C 总线挂了。如果连续 50 次采样都是这种无效数据，强制唤醒主 CPU 检查。

@@ -11,6 +11,7 @@
 #include "OLED.h"
 #include "OLED_Data.h"
 #include "MPU6050.h"
+#include "signal_fusion.h"
 #include "MessageQueue.h"
 #include "mqtt.h"
 #include "rtc_driver.h"
@@ -89,7 +90,7 @@ void app_main(void)
 			// 注意：将 ULP 的 uint32_t 缓冲区传给你主 CPU 的算法
 			Max30102_Algorithm_Calculate((uint32_t*)main_ir, ULP_BUF_SIZE, 
 										(uint32_t*)main_red, 
-										&final_spo2, &spo2_v, &final_hr, &hr_v);
+										&final_spo2, &spo2_v, &final_hr, &hr_v, 50);  // ULP path samples at 50Hz
 			
 			if (hr_v) ESP_LOGE("MainWake","主算法确认心率: %ld bpm, 血氧: %ld%%\n", final_hr, final_spo2);
 			if(final_hr > Max30102_Get_Heart_Rate_Baseline()+HEART_RATE_WARNING_THRESHOLD_HIGH 
@@ -185,6 +186,7 @@ void app_main(void)
 	xTaskCreatePinnedToCore(Task_OLED_Show, "Task_OLED_Show", 10240, NULL, 2, &OLED_Task_Handle, 1);
 	xTaskCreatePinnedToCore(Task_Max30102_Monitor, "max30102_Task", 4096, (void *)Buzzer_Task_Handle, 5, &Max30102_Task_Handle, 1);
 	xTaskCreatePinnedToCore(Task_Mpu6050_Monitor, "MPU6050_Task", 4096, (void *)Buzzer_Task_Handle, 5, &Mpu6050_Task_Handle, 1);
+	SignalFusion_Init();
 	xTaskCreatePinnedToCore(Task_Buzzer, "Buzzer_Task", 2048, NULL, 2, &Buzzer_Task_Handle,0); // 创建蜂鸣器任务并保存句柄
 
 	
@@ -310,11 +312,13 @@ void My_Key_Callback(key_id_t id, key_event_t event) {
 			if(isOLEDShow) {
 				OLED_ShowState = OLED_ShowState==1 ? 2 : 1; // 切换状态
 				OLED_Set_ShowState(OLED_ShowState);
+				ESP_LOGI("Key DOWN", "KEY2 SINGLE...");
 			}
 		}
 		if(event == KEY_EVENT_LONG_PRESS) {
 			// 长按触发ap配网
 			xTaskNotify(MQTT_Task_Handle, AP_Enter_Provision, eSetValueWithOverwrite);
+			ESP_LOGI("Key DOWN", "KEY2 LONG...");
 		}
 	}
 	if(id == KEY_3)
@@ -327,6 +331,7 @@ void My_Key_Callback(key_id_t id, key_event_t event) {
 			vTaskDelete(OLED_Task_Handle); OLED_Task_Handle = NULL;
 			vTaskDelete(Max30102_Task_Handle); Max30102_Task_Handle = NULL;
 			vTaskDelete(Mpu6050_Task_Handle); Mpu6050_Task_Handle = NULL;
+			SignalFusion_Stop();
 			En_Set(EN_CTL_GPIO, 0);	// 通过控制GPIO来切断电池，达到关机效果
 		}
 	}
@@ -380,6 +385,7 @@ static void enter_deep_sleep_with_ulp(void)
     if (Mpu6050_Task_Handle)  { vTaskDelete(Mpu6050_Task_Handle);  Mpu6050_Task_Handle  = NULL; }
     if (Max30102_Task_Handle) { vTaskDelete(Max30102_Task_Handle); Max30102_Task_Handle = NULL; }
     if (OLED_Task_Handle)     { vTaskDelete(OLED_Task_Handle);     OLED_Task_Handle     = NULL; }
+    SignalFusion_Stop();
     // 给传感器一点时间完成最后一帧传输
     vTaskDelay(pdMS_TO_TICKS(200)); 
 	// 重置 GPIO 6 (INT引脚)，确保没有残留的中断触发逻辑

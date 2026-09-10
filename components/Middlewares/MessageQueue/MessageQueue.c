@@ -169,6 +169,30 @@ bool Message_Queue_Send_Alert(bool fall_detected, bool convulsion_detected, bool
 }
 
 // 接收消息
+// 发送癫痫模型结果消息（SignalFusion -> MQTT）
+bool Message_Queue_Send_Seizure_Model(float model_prob, uint32_t heart_rate, uint32_t spo2, bool abnormal_motion)
+{
+    if (Sensor_Message_Queue_TO_MQTT == NULL) {
+        if (!queue_not_init_error_logged) {
+            ESP_LOGE(TAG, "消息队列未初始化");
+            queue_not_init_error_logged = true;
+        }
+        return false;
+    }
+
+    Sensor_Message_t message;
+    message.Message_Type = MESSAGE_TYPE_SEIZURE_MODEL;
+    message.Timestamp = (uint32_t)(esp_timer_get_time() / 1000); // 毫秒时间戳
+
+    message.Data.Seizure_Model_Data.Model_Prob = model_prob;
+    message.Data.Seizure_Model_Data.Heart_Rate = heart_rate;
+    message.Data.Seizure_Model_Data.SpO2 = spo2;
+    message.Data.Seizure_Model_Data.Abnormal_Motion = abnormal_motion;
+
+    BaseType_t result_MQTT = xQueueSend(Sensor_Message_Queue_TO_MQTT, &message, pdMS_TO_TICKS(100));
+    return result_MQTT == pdTRUE;
+}
+
 bool Message_Queue_Receive(QueueHandle_t queue_handle, Sensor_Message_t *message, TickType_t timeout)
 {
     if (queue_handle == NULL) {

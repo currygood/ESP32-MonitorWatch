@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" version="26.0.0">
+  <diagram id="d1" name="信号滤波与融合链路">
+    <mxGraphModel dx="950" dy="550" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1900" pageHeight="700" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="n1" value="MPU6050&#xa;六轴采样 50Hz" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="190" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="n2" value="硬件 DLPF&#xa;ACC 21Hz / GYRO 20Hz" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f0fe;strokeColor=#6c8ebf" vertex="1" parent="1">
+          <mxGeometry x="300" y="80" width="200" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="n3" value="单点尖峰抑制&#xa;±1g / ±61°/s" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f0fe;strokeColor=#6c8ebf" vertex="1" parent="1">
+          <mxGeometry x="570" y="80" width="190" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="n4" value="EMA 一阶低通&#xa;α=0.40  fc≈4.1Hz" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f0fe;strokeColor=#6c8ebf" vertex="1" parent="1">
+          <mxGeometry x="830" y="80" width="190" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="n5" value="运动指数&#xa;滤波后加速度" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f0fe;strokeColor=#6c8ebf" vertex="1" parent="1">
+          <mxGeometry x="1070" y="80" width="170" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="p1" value="MAX30102 采样 50Hz&#xa;IR / RED / 温度" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666" vertex="1" parent="1">
+          <mxGeometry x="40" y="240" width="190" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="p2" value="PPG IIR 带通&#xa;0.5~5Hz" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f0fe;strokeColor=#6c8ebf" vertex="1" parent="1">
+          <mxGeometry x="300" y="240" width="190" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="p3" value="峰值检测&#xa;提取原始心率" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f0fe;strokeColor=#6c8ebf" vertex="1" parent="1">
+          <mxGeometry x="570" y="240" width="190" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="p4" value="突变确认&#xa;连续 3 次才采信" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f0fe;strokeColor=#6c8ebf" vertex="1" parent="1">
+          <mxGeometry x="830" y="240" width="190" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="p5" value="原始心率" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f0fe;strokeColor=#6c8ebf" vertex="1" parent="1">
+          <mxGeometry x="1070" y="240" width="170" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="s1" value="R 比值&#xa;5 点中位数" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f0fe;strokeColor=#6c8ebf" vertex="1" parent="1">
+          <mxGeometry x="300" y="400" width="190" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="s2" value="SpO2 饱和度&#xa;查表" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f0fe;strokeColor=#6c8ebf" vertex="1" parent="1">
+          <mxGeometry x="570" y="400" width="190" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" value="温度 temp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f0fe;strokeColor=#6c8ebf" vertex="1" parent="1">
+          <mxGeometry x="830" y="400" width="190" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="f1" value="SignalFusion 卡尔曼融合&#xa;Q=0.5, R=9+60*motion&#xa;motion&gt;=1 冻结&#xa;连续 8 帧无效置无效&#xa;HR 40~200 bpm" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366" vertex="1" parent="1">
+          <mxGeometry x="1330" y="140" width="260" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="f2" value="特征窗口 200x7&#xa;(10s @ 20Hz)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366" vertex="1" parent="1">
+          <mxGeometry x="1660" y="140" width="200" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1" edge="1" parent="1" source="n1" target="n2">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1" edge="1" parent="1" source="n2" target="n3">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1" edge="1" parent="1" source="n3" target="n4">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1" edge="1" parent="1" source="n4" target="n5">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1" edge="1" parent="1" source="n5" target="f1">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1" edge="1" parent="1" source="p1" target="p2">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1" edge="1" parent="1" source="p2" target="p3">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1" edge="1" parent="1" source="p3" target="p4">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1" edge="1" parent="1" source="p4" target="p5">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e10" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1" edge="1" parent="1" source="p5" target="f1">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e11" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;dashed=1" edge="1" parent="1" source="p1" target="s1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="135" y="400" />
+              <mxPoint x="135" y="560" />
+              <mxPoint x="395" y="560" />
+              <mxPoint x="395" y="400" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1" edge="1" parent="1" source="s1" target="s2">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e13" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1" edge="1" parent="1" source="s2" target="f1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="665" y="466" />
+              <mxPoint x="665" y="530" />
+              <mxPoint x="1330" y="530" />
+              <mxPoint x="1330" y="330" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e14" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;dashed=1" edge="1" parent="1" source="p1" target="s3">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e15" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1" edge="1" parent="1" source="s3" target="f1">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e16" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1" edge="1" parent="1" source="f1" target="f2">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
