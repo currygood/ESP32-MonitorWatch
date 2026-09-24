@@ -6,6 +6,7 @@
 #include "freertos/task.h"
 #include "max30102.h"
 #include "MPU6050.h"
+#include "Buzzer.h"
 #include "MessageQueue.h"
 
 static const char *SF_TAG = "SignalFusion";
@@ -161,6 +162,10 @@ static void Task_Seizure_Detector(void *pv)
                 s_seiz_window_filled = 1;
                 ESP_LOGI(SF_TAG, "癫痫推理 prob=%.3f spo2=%lu high_risk=%u",
                          prob, (unsigned long)s_seiz_spo2, h);
+                /* 高危险事件（模型概率超阈值或血氧过低兜底）：本地蜂鸣器报警（15s 冷却由 Buzzer 任务去重） */
+                if (h) {
+                    buzzer_notify_on_from_sensor();
+                }
                 /* 模型结果投递给 MQTT 发送任务（OneNET 四信息点上报） */
                 Message_Queue_Send_Seizure_Model(prob,
                                                  (uint32_t)hr,

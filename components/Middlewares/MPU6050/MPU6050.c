@@ -42,9 +42,6 @@ static int buffer_idx = 0;
 #define MPU_FALL_PEAK_G         2.0f     // fall needs peak magnitude above this
 #define MPU_FALL_ACTIVITY       0.12f    // fall also needs avg sample change > this
 #define MPU_PEAK_MAG_G          1.8f     // samples above this count as strong peaks
-#define MPU_PEAK_MIN_COUNT      8        // min strong peaks for convulsion vote
-#define MPU_CONV_ACTIVITY       0.16f    // convulsion sustained shaking threshold
-#define MPU_CONV_PEAK_ACTIVITY  0.14f    // convulsion threshold when peaks also high
 
 static int16_t s_acc_prev2[3] = {0, 0, 0};
 static int16_t s_acc_prev [3] = {0, 0, 0};
@@ -108,7 +105,7 @@ void Mpu6050_Init(i2c_master_bus_handle_t bus_handle) {
     Mpu6050_Write_Reg(MPU6050_REG_PWR_MGMT_1, 0x01);
 
     Mpu6050_Write_Reg(MPU6050_REG_SMPLRT_DIV, 19);
-    // DLPF_CFG=4: ACCEL 21Hz/GYRO 20Hz，保留抽搐频段(2~30Hz)；采样率仍 50Hz
+    // DLPF_CFG=4: ACCEL 21Hz/GYRO 20Hz，保留高频振动频段(2~30Hz)；采样率仍 50Hz
     Mpu6050_Write_Reg(MPU6050_REG_CONFIG, 0x04);
     Mpu6050_Write_Reg(MPU6050_REG_ACCEL_CONFIG, 0x18);
     Mpu6050_Write_Reg(MPU6050_REG_GYRO_CONFIG, 0x18);
@@ -143,7 +140,7 @@ esp_err_t Mpu6050_Read_Raw(int16_t *ax, int16_t *ay, int16_t *az,
 }
 
 // // 检测函数
-// bool Mpu6050_Detect_Fall_Or_Convulsion(int16_t *ax_buf, int16_t *ay_buf, int16_t *az_buf, int len) {
+// bool Mpu6050_Detect_Fall(int16_t *ax_buf, int16_t *ay_buf, int16_t *az_buf, int len) {
 //     if (len < 10) return false;
 
 //     float max_mag = 0;
@@ -175,11 +172,11 @@ esp_err_t Mpu6050_Read_Raw(int16_t *ax, int16_t *ay, int16_t *az,
 //     return false;
 // }
 
-// 检测函数（改进版，增加了高频震动检测，更适合抽搐识别）
+// 检测函数：仅保留撞击/跌倒检测（抽搐判断已由端侧模型接管）
 // 定义全局变量
 static bool s_current_is_abnormal = false; 
 
-bool Mpu6050_Detect_Fall_Or_Convulsion(int16_t *ax_buf, int16_t *ay_buf, int16_t *az_buf, int len) {
+bool Mpu6050_Detect_Fall(int16_t *ax_buf, int16_t *ay_buf, int16_t *az_buf, int len) {
     if (len < 10) return false;
 
     // --- 每次进入检测时，先初始化为 false ---
@@ -213,13 +210,8 @@ bool Mpu6050_Detect_Fall_Or_Convulsion(int16_t *ax_buf, int16_t *ay_buf, int16_t
         return true;
     }
 
-    // B. 抽搐检测
-    if (activity_score > MPU_CONV_ACTIVITY || (high_peak_count > MPU_PEAK_MIN_COUNT && activity_score > MPU_CONV_PEAK_ACTIVITY)) {   // raise to kill convulsion false alarms
-        ESP_LOGW(TAG, "🚨 抽搐报警!");
-        s_current_is_abnormal = true;
-        return true;
-    }
-
+    // B. 抽搐检测已移除：抽搐/持续抖动判断统一交给 SignalFusion 端侧模型，
+    //    此处不再报警，避免刷牙等正常活动触发误报
     return false;
 }
 
@@ -327,12 +319,12 @@ void Task_Mpu6050_Monitor(void *pvParameters) {
             }
 
             if (buffer_idx >= MPU6050_BUFFER_SIZE) {
-                bool alarm = Mpu6050_Detect_Fall_Or_Convulsion(ax_buffer, ay_buffer, az_buffer, MPU6050_BUFFER_SIZE);
+                bool alarm = Mpu6050_Detect_Fall(ax_buffer, ay_buffer, az_buffer, MPU6050_BUFFER_SIZE);
 
                 if (alarm) {
-                    ESP_LOGW(TAG, "ALARM! 可能癫痫抽搐或跌倒事件");
-                    // 通过消息队列发送跌倒/抽搐预警
-                    Message_Queue_Send_Alert(true, true, false);
+                    ESP_LOGW(TAG, "ALARM! 检测到撞击/跌倒事件");
+                    // 通过消息队列发送跌倒/撞击预警
+                    Message_Queue_Send_Alert(true, false, false);
 					// 如果蜂鸣器未响，才响
 					if(!isBuzzerOn)
 					{

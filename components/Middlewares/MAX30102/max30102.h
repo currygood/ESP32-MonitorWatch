@@ -43,7 +43,7 @@
 #define IR_BUF_LEN               500
 #define RED_BUF_LEN              500
 
-// 心率预警相关配置
+// 心率基准与陡变确认相关配置
 #define HEART_RATE_BASELINE_SAMPLES     30    // 基准心率计算样本数
 #define HEART_RATE_WARNING_THRESHOLD_LOW 20    // 预警阈值下限（比基准高20）
 #define HEART_RATE_WARNING_THRESHOLD_HIGH 30   // 预警阈值上限（比基准高30）
@@ -89,14 +89,9 @@ void Max30102_Send_JSON_Data(void);
 uint32_t Max301020_Get_Heart_Rate(void);
 uint32_t Max30102_Get_Spo2(void);
 
-// --- 心率预警功能 ---
-void Max30102_Heart_Rate_Warning_Init(void);
+// --- 心率基准/平滑（供风险计算与上报使用） ---
 void Max30102_Update_Heart_Rate_Baseline(uint32_t current_hr);
-bool Max30102_Check_Heart_Rate_Warning(uint32_t current_hr);
 uint32_t Max30102_Get_Heart_Rate_Baseline(void);
-uint32_t Max30102_Get_Heart_Rate_Warning_Threshold(void);
-bool Max30102_Is_Heart_Rate_Warning_Active(void);
-void Max30102_Reset_Heart_Rate_Warning(void);
 int32_t Max30102_Confirm_Sudden_Change(int32_t hr, uint8_t hr_valid);
 
 #endif // MAX30102_H

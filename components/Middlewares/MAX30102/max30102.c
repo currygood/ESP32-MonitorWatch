@@ -35,14 +35,11 @@ static int32_t s_hr_last_ok  = 0;
 static bool    s_hr_last_ok_valid = false;
 
 
-// --- 心率预警相关变量 ---
+// --- 心率基准（供风险等级计算与心率平滑使用） ---
 static uint32_t Heart_Rate_Baseline = 70;                    // 基准心率（默认70bpm）
-static uint32_t Heart_Rate_Warning_Threshold = 90;           // 预警阈值（默认比基准高20）
 static uint32_t Heart_Rate_Baseline_History[HEART_RATE_BASELINE_SAMPLES]; // 历史心率记录
 static uint8_t Heart_Rate_Baseline_Index = 0;               // 历史记录索引
 static uint8_t Heart_Rate_Stable_Count = 0;                 // 心率稳定计数器
-static bool Heart_Rate_Warning_Active = false;              // 预警状态标志
-static bool Heart_Rate_Baseline_Initialized = false;        // 基准心率是否已初始化
 
 // --- I2C初始化 ---
 void Max30102_Init(i2c_master_bus_handle_t bus_handle) {
@@ -74,27 +71,6 @@ esp_err_t Max30102_Write_Reg(uint8_t reg, uint8_t data) {
 
 esp_err_t Max30102_Read_Reg(uint8_t reg, uint8_t *data) {
     return I2c_Read_Reg(max30102_dev, reg, data);
-}
-
-// --- 心率预警功能实现 ---
-
-// 初始化心率预警系统
-void Max30102_Heart_Rate_Warning_Init(void)
-{
-    // 初始化历史记录数组
-    for (int i = 0; i < HEART_RATE_BASELINE_SAMPLES; i++) {
-        Heart_Rate_Baseline_History[i] = Heart_Rate_Baseline;
-    }
-    Heart_Rate_Baseline_Index = 0;
-    Heart_Rate_Stable_Count = 0;
-    Heart_Rate_Warning_Active = false;
-    Heart_Rate_Baseline_Initialized = false;
-    s_hr_seq_high = 0;
-    s_hr_seq_low  = 0;
-    s_hr_last_ok  = 0;
-    s_hr_last_ok_valid = false;
-    
-    ESP_LOGI(TAG, "心率预警系统初始化完成");
 }
 
 // 更新基准心率
@@ -134,51 +110,9 @@ void Max30102_Update_Heart_Rate_Baseline(uint32_t current_hr)
         // 只有当心率稳定一定次数后才更新基准
         if (Heart_Rate_Stable_Count >= HEART_RATE_STABLE_COUNT) {
             Heart_Rate_Baseline = new_baseline;
-            Heart_Rate_Warning_Threshold = Heart_Rate_Baseline + HEART_RATE_WARNING_THRESHOLD_LOW;
-            Heart_Rate_Baseline_Initialized = true;
             
-            ESP_LOGI(TAG, "基准心率已更新: %lu bpm, 预警阈值: %lu bpm", 
-                     Heart_Rate_Baseline, Heart_Rate_Warning_Threshold);
+            ESP_LOGI(TAG, "基准心率已更新: %lu bpm", Heart_Rate_Baseline);
         }
-    }
-}
-
-// 检查心率是否过快/过低
-bool Max30102_Check_Heart_Rate_Warning(uint32_t current_hr)
-{
-    // 检查心率是否在有效范围内
-    if (current_hr < HEART_RATE_MIN_VALID || current_hr > HEART_RATE_MAX_VALID) {
-        Heart_Rate_Warning_Active = false;
-        return false;
-    }
-    
-    // 如果基准心率尚未初始化，使用默认阈值
-    uint32_t warning_threshold = Heart_Rate_Baseline_Initialized ? 
-                                Heart_Rate_Warning_Threshold : 
-                                (Heart_Rate_Baseline + HEART_RATE_WARNING_THRESHOLD_LOW);
-    
-    // 检查是否超过预警阈值
-    if (current_hr >= warning_threshold) {
-        if (!Heart_Rate_Warning_Active) {
-            Heart_Rate_Warning_Active = true;
-            ESP_LOGW(TAG, "⚠️ 心率过快预警! 当前心率: %lu bpm, 基准心率: %lu bpm", 
-                     current_hr, Heart_Rate_Baseline);
-        }
-        return true;
-    }else if(current_hr < warning_threshold - HEART_RATE_WARNING_THRESHOLD_LOW){			//心率过低
-		if (!Heart_Rate_Warning_Active) {
-            Heart_Rate_Warning_Active = true;
-            ESP_LOGW(TAG, "⚠️ 心率过低预警! 当前心率: %lu bpm, 基准心率: %lu bpm", 
-                     current_hr, Heart_Rate_Baseline);
-        }
-        return true;
-	}
-	else {
-        if (Heart_Rate_Warning_Active) {
-            Heart_Rate_Warning_Active = false;
-            ESP_LOGI(TAG, "心率恢复正常: %lu bpm", current_hr);
-        }
-        return false;
     }
 }
 
@@ -187,35 +121,6 @@ uint32_t Max30102_Get_Heart_Rate_Baseline(void)
 {
     return Heart_Rate_Baseline;
 }
-
-// 获取预警阈值
-uint32_t Max30102_Get_Heart_Rate_Warning_Threshold(void)
-{
-    return Heart_Rate_Warning_Threshold;
-}
-
-// 检查预警状态
-bool Max30102_Is_Heart_Rate_Warning_Active(void)
-{
-    return Heart_Rate_Warning_Active;
-}
-
-// 重置预警系统
-void Max30102_Reset_Heart_Rate_Warning(void)
-{
-    Heart_Rate_Baseline = 70;
-    Heart_Rate_Warning_Threshold = 90;
-    Heart_Rate_Stable_Count = 0;
-    Heart_Rate_Warning_Active = false;
-    Heart_Rate_Baseline_Initialized = false;
-    
-    for (int i = 0; i < HEART_RATE_BASELINE_SAMPLES; i++) {
-        Heart_Rate_Baseline_History[i] = Heart_Rate_Baseline;
-    }
-    
-    ESP_LOGI(TAG, "心率预警系统已重置");
-}
-
 esp_err_t Max30102_Read_Fifo(uint8_t *buffer, uint8_t count) {
     return I2c_Read_Bytes(max30102_dev, REG_FIFO_DATA, buffer, count);
 }
@@ -636,14 +541,11 @@ void Max30102_Send_JSON_Data(void)
     
     // 计算癫痫风险等级（基于心率和血氧数据）
     uint32_t seizure_risk_level = 0;
-    if (n_heart_rate > 100 || n_spo2 < 95) {
+    if (n_heart_rate > 100 || (n_spo2 >= 1 && n_spo2 < 95)) {
         seizure_risk_level = 60;  // 中等风险
     }
-    if (n_heart_rate > 120 || n_spo2 < 90) {
+    if (n_heart_rate > 120 || (n_spo2 >= 1 && n_spo2 < 90)) {
         seizure_risk_level = 80;  // 高风险
-    }
-    if (Max30102_Is_Heart_Rate_Warning_Active()) {
-        seizure_risk_level = 90;  // 预警状态高风险
     }
     
     // 异常运动检测（基于心率变化）
@@ -694,8 +596,6 @@ void Task_Max30102_Monitor(void *pvParameters) {
     uint8_t fifo_wp, fifo_rp;
     int samples_read;
     int i;
-	static uint32_t last_buzzer_time = 0;
-	static bool isBuzzerOn = false;
 	static uint32_t prev_red = 0, prev_ir = 0;  // spike guard
     
     ESP_LOGI(TAG, "Monitor task started");
@@ -734,9 +634,6 @@ void Task_Max30102_Monitor(void *pvParameters) {
     
     Max30102_Gpio_Isr_Init(xTaskGetCurrentTaskHandle());
     vTaskDelay(pdMS_TO_TICKS(100));
-    
-    // 初始化心率预警系统
-    Max30102_Heart_Rate_Warning_Init();
     
     // 再读一次 FIFO 指针，看是否有数据产生
     Max30102_Read_Reg(0x04, &fifo_wp);
@@ -822,32 +719,19 @@ void Task_Max30102_Monitor(void *pvParameters) {
         }
         // 调用算法计算
         Max30102_Algorithm_Calculate(aun_ir_buffer, n_ir_buffer_length, aun_red_buffer, &n_spo2, &ch_spo2_valid, &n_heart_rate, &ch_hr_valid, 100);
-                // 心率预警检测（使用 SignalFusion 融合结果，未就绪时回退 raw）
+        // 仅计算并上报心率/血氧（不再做心率过快/过低预警与本地报警）
         int32_t hr_used = Max30102_Get_Fused_Heart_Rate();
         uint8_t fused_ready = Max30102_Get_Fused_Heart_Rate_Valid();
         if (!fused_ready) { hr_used = n_heart_rate; fused_ready = ch_hr_valid; }
         if (fused_ready) {
             hr_used = Max30102_Confirm_Sudden_Change(hr_used, 1);
             Max30102_Update_Heart_Rate_Baseline((uint32_t)hr_used);
-            bool warning_active = Max30102_Check_Heart_Rate_Warning((uint32_t)hr_used);
-            if (warning_active) {
-                ESP_LOGW(TAG, "癫痫早期症状检测: 心率过快! 当前: %ld bpm, 基准: %lu bpm, 阈值: %lu bpm",
-                         (long)hr_used, Max30102_Get_Heart_Rate_Baseline(),
-                         Max30102_Get_Heart_Rate_Warning_Threshold());
-                if(!isBuzzerOn)
-                {
-                   buzzer_notify_on_from_sensor(); 
-                }
-            }
             if (ch_spo2_valid == 1) {
                 Message_Queue_Send_Heart_Rate((uint32_t)hr_used, (uint32_t)n_spo2,
-                                             Max30102_Get_Heart_Rate_Baseline(), warning_active);
+                                             Max30102_Get_Heart_Rate_Baseline(), false);
             } else {
                 Message_Queue_Send_Heart_Rate((uint32_t)hr_used, 0,
-                                             Max30102_Get_Heart_Rate_Baseline(), warning_active);
-            }
-            if (warning_active) {
-                Message_Queue_Send_Alert(false, false, true);
+                                             Max30102_Get_Heart_Rate_Baseline(), false);
             }
         }
 

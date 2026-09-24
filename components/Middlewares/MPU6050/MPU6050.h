@@ -38,8 +38,8 @@ esp_err_t Mpu6050_Read_Reg(uint8_t reg, uint8_t *data);
 esp_err_t Mpu6050_Read_Raw(int16_t *ax, int16_t *ay, int16_t *az,
                            int16_t *gx, int16_t *gy, int16_t *gz);
 
-// 检测摔倒或 convulsion	
-bool Mpu6050_Detect_Fall_Or_Convulsion(int16_t *ax_buf, int16_t *ay_buf, int16_t *az_buf, int len);
+// 检测撞击/摔倒	
+bool Mpu6050_Detect_Fall(int16_t *ax_buf, int16_t *ay_buf, int16_t *az_buf, int len);
 bool Get_isFall(void);
 
 // --- 标志位管理函数 ---

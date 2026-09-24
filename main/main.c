@@ -95,7 +95,7 @@ void app_main(void)
 			if (hr_v) ESP_LOGE("MainWake","主算法确认心率: %ld bpm, 血氧: %ld%%\n", final_hr, final_spo2);
 			if(final_hr > Max30102_Get_Heart_Rate_Baseline()+HEART_RATE_WARNING_THRESHOLD_HIGH 
 				|| final_hr < Max30102_Get_Heart_Rate_Baseline()-HEART_RATE_WARNING_THRESHOLD_LOW 
-				|| final_spo2<90)
+				|| (spo2_v == 1 && final_spo2 >= 1 && final_spo2 < 90))   // SpO2==0 表示未监测到血氧，不参与低氧判定
 			{
 				Wake_Warm = 1;
 			}
@@ -119,10 +119,10 @@ void app_main(void)
 			}
 
 			// 3. 将解包后的紧凑数组传给算法
-			bool is_fall = Mpu6050_Detect_Fall_Or_Convulsion(main_ax, main_ay, main_az, ULP_BUF_SIZE);
+			bool is_fall = Mpu6050_Detect_Fall(main_ax, main_ay, main_az, ULP_BUF_SIZE);
 			
 			if(is_fall) {
-				ESP_LOGE("MainWake","🚨 确认跌倒/抽搐报警！\n");
+				ESP_LOGE("MainWake","🚨 确认撞击/跌倒报警！\n");
 				Wake_Warm = 2;
 			}
         }else
