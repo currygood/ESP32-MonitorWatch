@@ -70,7 +70,10 @@ void sensors_init() {
     // MPU6050 复位
     i2c_write_reg(I2C_MPU_ADDR, 0x6B, 0x80);
     ulp_riscv_delay_cycles(ULP_RISCV_CYCLES_PER_MS * 150);
-    i2c_write_reg(I2C_MPU_ADDR, 0x6B, 0x01);
+    // 低功耗：内部时钟 + 关温度传感器(0x20)，再关陀螺仪三轴(PWR_MGMT_2=0x07)，
+    // 只保留加速度计运行，功耗从 ~3.9mA 降到 ~0.5mA
+    i2c_write_reg(I2C_MPU_ADDR, 0x6B, 0x20);
+    i2c_write_reg(I2C_MPU_ADDR, 0x6C, 0x07);
     i2c_write_reg(I2C_MPU_ADDR, 0x1C, 0x10);
 
     // MAX30102 复位

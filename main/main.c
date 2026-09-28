@@ -37,7 +37,8 @@ typedef enum
 }DeepSleep_Event;
 // 引用 ULP 中定义的缓冲区大小
 #define ULP_BUF_SIZE 100
-#define WAIT_OTA_NOTIFY 500	//500s
+#define WAIT_OTA_NOTIFY 180	//180s：启动后最多等待 180s 的 OTA/联网窗口
+#define AUTO_SLEEP_AFTER_BOOT_MS (60 * 1000)	//启动约 1 分钟后自动进入 ULP+深度睡眠
 TaskHandle_t Buzzer_Task_Handle = NULL;  // Buzzer的Handler
 TaskHandle_t MQTT_Task_Handle = NULL;    // MQTT的Handler
 TaskHandle_t APP_MAIN_Handle = NULL;	//app_main的Handler
@@ -60,6 +61,7 @@ static char SendTopic[TOPIC_STR_SIZE] = {0};
 
 void app_main(void) 
 {
+	TickType_t boot_tick = xTaskGetTickCount();	// 记录启动时刻，用于"启动1分钟后自动深睡"
 	vTaskDelay(pdMS_TO_TICKS(5000)); // 等待系统稳定
 	// 根据板子电路设计，要给这个引脚高电平，不然松开按键之后就断电了
 	En_Init();	//芯片一直通电，通过控制GPIO来启用或禁用电池电量检测模块，避免不必要的功耗
@@ -266,6 +268,12 @@ void app_main(void)
 	uint32_t received_cmd;
 	while(1)
 	{
+		// 启动满 1 分钟后自动进入 ULP+深睡（即使 MQTT 没连上），保证不会长时间空转耗电
+		if((xTaskGetTickCount() - boot_tick) >= pdMS_TO_TICKS(AUTO_SLEEP_AFTER_BOOT_MS))
+		{
+			ESP_LOGI("MainSleep", "启动已满1分钟，自动进入深度睡眠+ULP");
+			enter_deep_sleep_with_ulp();
+		}
 		if(MQTT_Is_Connected())	//各种初始化成功后就进入深度睡眠+ULP
 		{
 			ESP_LOGI("MainSleep", "准备进入深度睡眠...");
@@ -302,7 +310,7 @@ void My_Key_Callback(key_id_t id, key_event_t event) {
 		}
 		if(event == KEY_EVENT_LONG_PRESS)
 		{
-			// 进入ULP处理
+			// 长按KEY1进入ULP+深睡：只通知app_main统一执行，回调运行在Timer服务任务上不能直接睡
 			xTaskNotify(APP_MAIN_Handle, KEY2_LONGPRESS_ENTER_SLEEP, eSetValueWithOverwrite);
 		}
     }
@@ -370,6 +378,9 @@ static void enter_deep_sleep_with_ulp(void)
     OLED_Clear();
     OLED_Update();
     OLED_WriteCommand(0xAE);
+    // 深睡期间把 OLED 电荷泵一并关闭，显示芯片功耗降到 uA 级（唤醒后 OLED_Init 会重新开启）
+    OLED_WriteCommand(0x8D);
+    OLED_WriteCommand(0x10);
 
     // 2. 关闭网络
     esp_mqtt_client_stop(MQTT_Give());
@@ -392,6 +403,10 @@ static void enter_deep_sleep_with_ulp(void)
     gpio_isr_handler_remove(MAX30102_INT_GPIO);
     gpio_reset_pin(MAX30102_INT_GPIO);
 	
+    // 深睡前先把 MPU6050 切入低功耗（内部时钟+关温度、关陀螺三轴），
+    // 避免 ULP 重新初始化之前这段窗口仍按满负荷运行
+    Mpu6050_Write_Reg(MPU6050_REG_PWR_MGMT_1, 0x20);
+    Mpu6050_Write_Reg(MPU6050_REG_PWR_MGMT_2, 0x07);
 
     // 5. 任务全部退出后，再安全删除总线
     i2c_master_bus_handle_t bus = I2c_Get_Global_Bus_Handle();

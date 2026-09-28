@@ -20,6 +20,7 @@
 // --- 寄存器 ---
 #define MPU6050_REG_WHO_AM_I     0x75
 #define MPU6050_REG_PWR_MGMT_1   0x6B
+#define MPU6050_REG_PWR_MGMT_2   0x6C
 #define MPU6050_REG_SMPLRT_DIV   0x19
 #define MPU6050_REG_CONFIG       0x1A
 #define MPU6050_REG_GYRO_CONFIG  0x1B
