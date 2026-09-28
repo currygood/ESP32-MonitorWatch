@@ -38,7 +38,7 @@ typedef enum
 // 引用 ULP 中定义的缓冲区大小
 #define ULP_BUF_SIZE 100
 #define WAIT_OTA_NOTIFY 180	//180s：启动后最多等待 180s 的 OTA/联网窗口
-#define AUTO_SLEEP_AFTER_BOOT_MS (60 * 1000)	//启动约 1 分钟后自动进入 ULP+深度睡眠
+#define AUTO_SLEEP_AFTER_BOOT_MS (60 * 5000)	//启动约 5 分钟后自动进入 ULP+深度睡眠
 TaskHandle_t Buzzer_Task_Handle = NULL;  // Buzzer的Handler
 TaskHandle_t MQTT_Task_Handle = NULL;    // MQTT的Handler
 TaskHandle_t APP_MAIN_Handle = NULL;	//app_main的Handler
