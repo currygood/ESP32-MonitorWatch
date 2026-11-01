@@ -1,0 +1,30 @@
+ESP32S3 癫痫前期症状监测手表（ESP32-MonitorWatch）
+Copyright 2026 currygood
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+本产品包含第三方开源软件。各第三方组件的名称、版本、许可证及获取地址
+完整列于 THIRD_PARTY_NOTICES.md；分发本产品的二进制固件或手机 App 时，
+须一并提供 LICENSE、本 NOTICE 与 THIRD_PARTY_NOTICES.md。
+
+This product includes software developed by Espressif Systems (Shanghai) CO LTD
+and its contributors (https://www.espressif.com/), licensed under the
+Apache License, Version 2.0.
+
+This product includes software developed by the TensorFlow Authors
+(https://www.tensorflow.org/), including TensorFlow Lite Micro and the
+FlatBuffers-generated schema code, licensed under the Apache License, Version 2.0.
+
+This product includes software developed by Google LLC and the Flutter/Dart
+teams (https://flutter.dev/), licensed under the BSD 3-Clause License.
+
+--------------------------------------------------------------------------
+关于第三方文件修改（Apache License 2.0, Section 4(b)）
+
+本仓库纳入版本管理的源码（components/、main/、phone_app/）不含任何第三方
+版权头，均为本项目自有实现；由 ESP-IDF 组件管理器拉取的第三方代码存放于
+managed_components/，不在本仓库内，本项目未对其做任何修改。因此本仓库
+不涉及对被许可作品的修改声明义务。
+
+若后续向本仓库提交修改自第三方的文件，须在该文件内保留原始版权声明，
+并在提交说明中标注 "modified from <上游项目>"。

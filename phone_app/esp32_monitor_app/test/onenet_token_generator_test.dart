@@ -1,3 +1,9 @@
+// SPDX-FileCopyrightText: 2026 currygood
+// SPDX-License-Identifier: Apache-2.0
+//
+// ESP32-MonitorWatch companion app for the seizure monitoring watch.
+// See LICENSE in the project root for the full license text.
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:esp32_monitor_app/utils/onenet_token_generator.dart';
 

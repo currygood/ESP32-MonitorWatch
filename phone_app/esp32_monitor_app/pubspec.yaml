@@ -2,6 +2,7 @@ name: esp32_monitor_app
 description: "A new Flutter project."
 publish_to: 'none'
 
+# License: Apache-2.0 — 见本目录 LICENSE 与仓库根目录 LICENSE / NOTICE / THIRD_PARTY_NOTICES.md
 version: 1.0.0+1
 
 environment:

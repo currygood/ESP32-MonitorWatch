@@ -1,3 +1,11 @@
+/*
+ * SPDX-FileCopyrightText: 2026 currygood
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * ESP32-MonitorWatch - Seizure pre-symptom monitoring watch firmware.
+ * See LICENSE in the project root for the full license text.
+ */
+
 #pragma once
 // Auto-generated from html/apcfg.html (byte-exact copy).
 // Used as a built-in fallback when the SPIFFS storage partition

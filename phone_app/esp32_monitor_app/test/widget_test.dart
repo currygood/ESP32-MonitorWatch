@@ -1,3 +1,9 @@
+// SPDX-FileCopyrightText: 2026 currygood
+// SPDX-License-Identifier: Apache-2.0
+//
+// ESP32-MonitorWatch companion app for the seizure monitoring watch.
+// See LICENSE in the project root for the full license text.
+
 // This is a basic Flutter widget test.
 //
 // To perform an interaction with a widget in your test, use the WidgetTester

@@ -1,3 +1,11 @@
+/*
+ * SPDX-FileCopyrightText: 2026 currygood
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * ESP32-MonitorWatch - Seizure pre-symptom monitoring watch firmware.
+ * See LICENSE in the project root for the full license text.
+ */
+
 #include "signal_fusion.h"
 #include "seizure_model.h"
 #include <stdbool.h>

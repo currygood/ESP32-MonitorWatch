@@ -1,4 +1,16 @@
 # ESP32S3癫痫前期症状监测手表
+
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![Third-Party Notices](https://img.shields.io/badge/third--party-notices-yellow.svg)](THIRD_PARTY_NOTICES.md)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
+## 目录
+
+- [需求分析 / 项目背景](#需求分析项目背景)
+- [硬件选型](#硬件选型)
+- [项目所实现的](#项目所实现的)
+- [开源许可与合规](#开源许可与合规) — 许可证、第三方组件清单、贡献与引用方式
+
 ## 需求分析/项目背景
 在如今，癫痫发病概率越来越高，在医院的神经外科大楼里可以看到每3个人就有一个人会发生脑卒中，也就是癫痫。所以做这个低成本的癫痫发病监测手表对低收入家庭十分重要，癫痫发病前期会心率异常，手部可能会伴随抽搐。我们想要开发一款能监测病人状况，发病的时候报警的手表，这个报警不只是本地蜂鸣器报警，还有发送到云端，同时既然他是手表，那就需要有一个屏幕显示内容：时间，手表剩余电量，wifi连接状态，心率血氧数值。 结合这些症状表现和我们的目的，为后续的选型提供来源。
 ## 硬件选型
@@ -146,3 +158,48 @@ https://www.bilibili.com/video/BV1H3L96bEtP/?vd_source=c9924bda4031caf6f7caa15a0
 3.1.x版本：传感器报警策略调整——移除MPU6050抽搐（持续抖动）检测，仅保留撞击/跌倒检测；移除MAX30102心率过快/过低预警与本地报警，保留心率/血氧计算并照常上报OneNET；端侧模型判定高风险（概率>0.81 或 SpO₂<90% 兜底）时新增本地蜂鸣器报警，事件判断统一交由端侧AI模型（SignalFusion）完成
 
 3.2.0版本（理论上，尚未实测）：进一步低功耗优化——深睡时 MPU6050 关闭陀螺仪与温度传感器（仅保留加速度计，理论功耗约 3.9mA → 0.5mA）、OLED 在关闭显示基础上关闭电荷泵；性能指标在原基础上减去本次提升量（MPU6050 约 −3.4mA、OLED 电荷泵降至 μA 级），以上均为理论估算，实际数值待整板实测后补充
+
+## 开源许可与合规
+
+### 许可证
+
+本项目以 **Apache License 2.0** 授权，Copyright 2026 currygood。固件、Flutter 手机端、端侧模型与文档均适用同一许可，全部源码文件已在文件头标注 `SPDX-License-Identifier: Apache-2.0`，可通过 SPDX 工具自动识别。
+
+### 合规文件
+
+| 文件 | 内容 |
+| ---- | ---- |
+| [LICENSE](LICENSE) | Apache-2.0 许可全文 |
+| [NOTICE](NOTICE) | 归属声明（Apache-2.0 第 4(d) 条要求随分发传递） |
+| [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | 第三方组件清单：ESP-IDF、esp-tflite-micro、esp-nn、Flutter 依赖逐项列明版本与许可证 |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献规则，提交需 `Signed-off-by`（DCO 1.1） |
+
+### 权利与义务
+
+- **你可以**：商用、修改、闭源分发、专利使用（Apache-2.0 含显式专利授权，第 3 条）。
+- **你必须**：保留版权与许可声明；以二进制形式分发（固件 `.bin`、App 安装包、成品手表）时随附 `LICENSE` + `NOTICE` + `THIRD_PARTY_NOTICES.md`；标注对原始文件的修改。
+- **你不可以**：使用本项目名称与 Logo 作为商标背书（第 6 条不授予商标权）。
+
+### 第三方依赖
+
+固件侧全部为 Apache-2.0（ESP-IDF 5.2.6、esp-tflite-micro 1.4.0、esp-nn 1.3.2 等）；手机端以 BSD-3-Clause 为主，其中 `dio` 为 MIT，传递依赖 `dbus` 为 MPL-2.0（仅 Linux 桌面构建涉及，当前发布的 Android 包不受影响）。逐项版本、许可证与上游地址见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+### 引用本项目
+
+学术或二次开发中引用：
+
+```bibtex
+@misc{currygood2026esp32monitorwatch,
+  title        = {ESP32S3 癫痫前期症状监测手表 (ESP32-MonitorWatch)},
+  author       = {currygood},
+  year         = {2026},
+  howpublished = {\url{https://github.com/currygood/ESP32-MonitorWatch}},
+  note         = {Licensed under the Apache License, Version 2.0}
+}
+```
+
+### 致谢
+
+本项目的实现建立在以下开源工作之上，谨致谢意：**ESP-IDF** 与 **Espressif Component Registry**（芯片抽象与构建体系）、**TensorFlow Lite Micro / esp-nn**（端侧 int8 推理）、**Flutter / Dart**（手机端框架）、**FreeRTOS / lwIP / mbedTLS**（RTOS、网络与加密栈）。完整依赖及其许可证见上文清单。
+
+> ⚠️ **医疗免责**：本项目为监测预警原型，非医疗器械，未经临床验证（模型阈值与功耗指标部分为理论估算）。其输出不构成医学诊断依据，不得替代专业医疗监护设备；用于真实患者监护前须完成临床评估与相关合规认证。
